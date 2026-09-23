@@ -134,6 +134,9 @@ export default class DockStacksExtension extends Extension {
         this._stackGrab = null;
         this._relayoutId = 0;
         this._winSignals = [];   // [ [app, handlerId], ... ]
+        this._dragActive = false;
+        this._pendingRebuild = false;
+        this._reorderCtx = null;
 
         this._buildDock();
         this._applyGnomeIntegration();
@@ -1534,17 +1537,27 @@ export default class DockStacksExtension extends Extension {
             this._beginLiveReorder(btn);
         });
         const onEnd = () => {
-            this._dragActive = false;
             btn.remove_style_class_name('dragging');
-            this._endLiveReorder();
-            if (this._pendingRebuild) {
-                this._pendingRebuild = false;
-                this._queueRebuild();
-            }
+            this._finishDrag();
         };
         draggable.connect('drag-end', onEnd);
         draggable.connect('drag-cancelled', onEnd);
         btn._draggable = draggable;
+    }
+
+    // Limpieza de fin de arrastre. Debe poder llamarse desde acceptDrop además
+    // de desde 'drag-end'/'drag-cancelled', porque en un drop con ÉXITO GNOME
+    // destruye el actor arrastrado y eso desconecta los handlers del draggable
+    // ANTES de emitir 'drag-end' (dnd.js: disconnectAll en el destroy del
+    // actor). Si solo confiáramos en 'drag-end', _dragActive quedaría en true
+    // para siempre y bloquearía tooltips, miniaturas y reconstrucciones.
+    _finishDrag() {
+        this._dragActive = false;
+        this._endLiveReorder();
+        if (this._pendingRebuild) {
+            this._pendingRebuild = false;
+            this._queueRebuild();
+        }
     }
 
     // Objetivo de "drop": el dock (this._dock._delegate = this)
@@ -1647,6 +1660,9 @@ export default class DockStacksExtension extends Extension {
             return false;
         const newIndex = this._computeGroupDropIndex(source, x, y);
         const changed = this._performReorder(source, newIndex);
+        // En un drop con éxito, 'drag-end' no llegará (el actor se destruye y
+        // se desconectan los handlers), así que limpiamos el estado aquí.
+        this._finishDrag();
         // DND saca el actor original del dock al arrastrarlo. Si NO cambia el
         // orden (misma posición), no hay ajuste de settings que reconstruya el
         // dock, así que el icono "desaparecería": forzamos la reconstrucción.
