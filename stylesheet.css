@@ -1,0 +1,359 @@
+.dock-bar {
+    padding: 3px 6px;
+    border-radius: 14px;
+    spacing: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    /* background-color se aplica inline según opacidad configurada */
+}
+
+.dock-item {
+    border-radius: 10px;
+    padding: 2px;
+    transition-duration: 150ms;
+}
+
+.dock-item.dragging {
+    opacity: 0.35;
+}
+
+.dock-item:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+.dock-item:active {
+    background-color: rgba(255, 255, 255, 0.25);
+}
+
+.dock-separator {
+    width: 1px;
+    min-width: 1px;
+    margin: 6px 4px;
+    background-color: rgba(255, 255, 255, 0.20);
+}
+
+/* ---- indicadores de ejecución (puntos) ---- */
+.dock-running-indicator {
+    height: 7px;
+    min-height: 7px;
+    spacing: 3px;
+    margin-top: 2px;
+}
+
+.dock-running-dot {
+    width: 5px;
+    height: 5px;
+    min-width: 5px;
+    min-height: 5px;
+    border-radius: 3px;
+    background-color: rgba(255, 255, 255, 0.75);
+}
+
+.dock-running-dot.focused {
+    width: 7px;
+    min-width: 7px;
+    background-color: #4c9aff;
+}
+
+/* ---- popup de stack ---- */
+.dock-stack-popup {
+    background-color: rgba(40, 40, 40, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+    padding: 14px;
+    spacing: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.dock-stack-title {
+    font-weight: bold;
+    color: #ffffff;
+    padding-bottom: 6px;
+    text-align: center;
+}
+
+.dock-stack-grid {
+    spacing: 6px;
+}
+
+.dock-stack-row {
+    spacing: 6px;
+}
+
+.dock-stack-cell {
+    border-radius: 12px;
+    padding: 8px;
+    width: 92px;
+    transition-duration: 120ms;
+}
+
+.dock-stack-cell:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+.dock-stack-cell-label {
+    color: #eeeeee;
+    font-size: 10pt;
+    max-width: 84px;
+    text-align: center;
+    padding-top: 4px;
+}
+
+/* ---- modo abanico (estilo macOS) ---- */
+.dock-fan-cell {
+    border-radius: 16px;
+    padding: 2px;
+    transition-duration: 120ms;
+}
+
+/* El marco/pastilla envuelve el nombre y el icono juntos */
+.dock-fan-frame {
+    spacing: 10px;
+    padding: 6px 10px;
+    border-radius: 14px;
+    background-color: rgba(40, 40, 40, 0.90);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.dock-fan-cell:hover .dock-fan-frame {
+    background-color: rgba(70, 70, 70, 0.95);
+    border-color: rgba(255, 255, 255, 0.25);
+}
+
+.dock-fan-label {
+    color: #ffffff;
+    font-size: 10.5pt;
+    font-weight: 600;
+    max-width: 220px;
+}
+
+/* ---- botón de menú de aplicaciones ---- */
+.dock-apps-button:hover {
+    background-color: rgba(255, 255, 255, 0.18);
+}
+
+/* ---- rejilla de aplicaciones propia (Launchpad) ---- */
+.dock-appgrid-overlay {
+    background-color: rgba(0, 0, 0, 0.45);
+}
+
+/* contenedor transparente que separa los dos marcos */
+.dock-appgrid-container {
+    spacing: 16px;
+}
+
+/* marco EXTERIOR: borde y fondo sutil para que se vea el marco */
+.dock-appgrid-sidebar,
+.dock-appgrid-apps {
+    background-color: rgba(18, 18, 20, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 18px;
+    padding: 10px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+/* marco INTERIOR translúcido (el color/opacidad se aplican en línea) */
+.dock-appgrid-inner {
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-radius: 14px;
+    padding: 12px;
+    spacing: 10px;
+}
+
+.dock-appgrid-container.light .dock-appgrid-sidebar,
+.dock-appgrid-container.light .dock-appgrid-apps {
+    background-color: rgba(210, 210, 214, 0.55);
+    border-color: rgba(0, 0, 0, 0.18);
+}
+
+.dock-appgrid-cat {
+    padding: 10px 14px;
+    border-radius: 8px;
+    color: #e6e6e6;
+    font-size: 10.5pt;
+}
+
+.dock-appgrid-cat:hover {
+    background-color: rgba(255, 255, 255, 0.10);
+    color: #ffffff;
+}
+
+.dock-appgrid-cat.selected {
+    background-color: rgba(76, 154, 255, 0.90);
+    color: #ffffff;
+    font-weight: bold;
+}
+
+.dock-appgrid-config {
+    margin-top: 6px;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+}
+
+.dock-appgrid-container.light .dock-appgrid-config {
+    border-top-color: rgba(0, 0, 0, 0.15);
+}
+
+.dock-appgrid-toprow {
+    spacing: 8px;
+}
+
+.dock-appgrid-search {
+    font-size: 12pt;
+    padding: 8px 12px;
+    border-radius: 10px;
+}
+
+.dock-appgrid-sort {
+    padding: 8px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    transition-duration: 120ms;
+}
+
+.dock-appgrid-sort:hover {
+    background-color: rgba(255, 255, 255, 0.14);
+}
+
+.dock-appgrid-container.light .dock-appgrid-sort {
+    border-color: rgba(0, 0, 0, 0.20);
+    color: #1a1a1a;
+}
+
+.dock-appgrid-container.light .dock-appgrid-sort:hover {
+    background-color: rgba(0, 0, 0, 0.08);
+}
+
+.dock-appgrid-scroll {
+    min-height: 300px;
+}
+
+.dock-appgrid-box {
+    spacing: 6px;
+    padding: 4px;
+}
+
+.dock-appgrid-row {
+    spacing: 6px;
+}
+
+.dock-appgrid-cell {
+    border-radius: 12px;
+    padding: 10px;
+    width: 110px;
+    transition-duration: 120ms;
+}
+
+.dock-appgrid-cell:hover {
+    background-color: rgba(255, 255, 255, 0.14);
+}
+
+.dock-appgrid-cell:focus {
+    background-color: rgba(255, 255, 255, 0.20);
+}
+
+.dock-appgrid-label {
+    color: #f2f2f2;
+    font-size: 9.5pt;
+    max-width: 96px;
+    text-align: center;
+    padding-top: 6px;
+}
+
+/* ---- Tema CLARO: marcos blancos → texto oscuro y bordes legibles ---- */
+.dock-appgrid-container.light .dock-appgrid-inner {
+    border-color: rgba(0, 0, 0, 0.20);
+}
+
+.dock-appgrid-container.light .dock-appgrid-cat {
+    color: #2a2a2a;
+}
+
+.dock-appgrid-container.light .dock-appgrid-cat:hover {
+    background-color: rgba(0, 0, 0, 0.08);
+    color: #000000;
+}
+
+.dock-appgrid-container.light .dock-appgrid-cat.selected {
+    background-color: rgba(76, 154, 255, 0.95);
+    color: #ffffff;
+}
+
+.dock-appgrid-container.light .dock-appgrid-label {
+    color: #1a1a1a;
+}
+
+.dock-appgrid-container.light .dock-appgrid-cell:hover {
+    background-color: rgba(0, 0, 0, 0.08);
+}
+
+.dock-appgrid-container.light .dock-appgrid-cell:focus {
+    background-color: rgba(0, 0, 0, 0.14);
+}
+
+.dock-appgrid-container.light .dock-appgrid-search {
+    color: #1a1a1a;
+}
+
+.dock-appgrid-menu {
+    background-color: rgba(45, 45, 48, 0.98);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    padding: 4px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+
+.dock-appgrid-menu-item {
+    padding: 8px 16px;
+    border-radius: 6px;
+    color: #f2f2f2;
+}
+
+.dock-appgrid-menu-item:hover {
+    background-color: rgba(255, 255, 255, 0.16);
+}
+
+/* ---- tooltip (nombre) ---- */
+.dock-tooltip {
+    background-color: rgba(30, 30, 30, 0.95);
+    color: #ffffff;
+    font-size: 10pt;
+    padding: 5px 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+/* ---- miniaturas de ventanas al pasar el ratón ---- */
+.dock-preview {
+    background-color: rgba(40, 40, 40, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    padding: 10px;
+    spacing: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.dock-preview-item {
+    border-radius: 10px;
+    padding: 6px;
+    transition-duration: 120ms;
+}
+
+.dock-preview-item:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+.dock-preview-thumb {
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background-color: rgba(0, 0, 0, 0.25);
+}
+
+.dock-preview-title {
+    color: #eeeeee;
+    font-size: 9.5pt;
+    max-width: 220px;
+    text-align: center;
+    padding-top: 6px;
+}

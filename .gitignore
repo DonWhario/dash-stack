@@ -1,0 +1,11 @@
+# Esquemas compilados (se generan con `make schemas` / glib-compile-schemas)
+schemas/gschemas.compiled
+
+# Paquetes generados
+*.shell-extension.zip
+*.zip
+
+# Basura del sistema / editores
+*~
+*.swp
+.DS_Store

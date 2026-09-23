@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <enum id="org.gnome.shell.extensions.dock-stack.position">
+    <value value="0" nick="bottom"/>
+    <value value="1" nick="left"/>
+    <value value="2" nick="right"/>
+  </enum>
+
+  <enum id="org.gnome.shell.extensions.dock-stack.stack-style">
+    <value value="0" nick="grid"/>
+    <value value="1" nick="fan"/>
+  </enum>
+
+  <enum id="org.gnome.shell.extensions.dock-stack.stack-sort">
+    <value value="0" nick="asc"/>
+    <value value="1" nick="desc"/>
+  </enum>
+
+  <enum id="org.gnome.shell.extensions.dock-stack.apps-button-position">
+    <value value="0" nick="start"/>
+    <value value="1" nick="end"/>
+  </enum>
+
+  <enum id="org.gnome.shell.extensions.dock-stack.appgrid-theme">
+    <value value="0" nick="dark"/>
+    <value value="1" nick="light"/>
+  </enum>
+
+  <schema id="org.gnome.shell.extensions.dock-stack"
+          path="/org/gnome/shell/extensions/dock-stack/">
+
+    <key name="icon-size" type="i">
+      <default>48</default>
+      <range min="24" max="128"/>
+      <summary>Tamaño de los iconos del dock</summary>
+    </key>
+
+    <key name="position" enum="org.gnome.shell.extensions.dock-stack.position">
+      <default>"bottom"</default>
+      <summary>Posición del dock</summary>
+    </key>
+
+    <key name="autohide" type="b">
+      <default>false</default>
+      <summary>Ocultar automáticamente el dock (siempre oculto; se revela al pasar el ratón)</summary>
+    </key>
+
+    <key name="intellihide" type="b">
+      <default>true</default>
+      <summary>Ocultar el dock solo cuando una ventana lo cubre (maximizada/pantalla completa)</summary>
+    </key>
+
+    <key name="reserve-space" type="b">
+      <default>true</default>
+      <summary>Reservar el espacio del dock para que las ventanas no se le superpongan</summary>
+    </key>
+
+    <key name="startup-sound" type="b">
+      <default>false</default>
+      <summary>Reproducir un sonido al cargar la extensión (al iniciar sesión)</summary>
+    </key>
+
+    <key name="startup-sound-file" type="s">
+      <default>""</default>
+      <summary>Archivo de sonido de inicio (vacío = sonido del sistema)</summary>
+    </key>
+
+    <key name="shutdown-sound" type="b">
+      <default>false</default>
+      <summary>Reproducir un sonido al cerrar la sesión</summary>
+    </key>
+
+    <key name="shutdown-sound-file" type="s">
+      <default>""</default>
+      <summary>Archivo de sonido de cierre de sesión (vacío = sonido del sistema)</summary>
+    </key>
+
+    <key name="show-favorites" type="b">
+      <default>true</default>
+      <summary>Mostrar aplicaciones favoritas en el dock</summary>
+    </key>
+
+    <key name="background-opacity" type="i">
+      <default>65</default>
+      <range min="0" max="100"/>
+      <summary>Opacidad del fondo del dock (0-100)</summary>
+    </key>
+
+    <key name="stack-columns" type="i">
+      <default>5</default>
+      <range min="1" max="8"/>
+      <summary>Máximo de columnas al desplegar un stack</summary>
+    </key>
+
+    <key name="stack-max-items" type="i">
+      <default>30</default>
+      <range min="5" max="200"/>
+      <summary>Máximo de elementos mostrados en un stack de carpeta</summary>
+    </key>
+
+    <key name="stacks" type="s">
+      <default>"[]"</default>
+      <summary>Definición de stacks (JSON)</summary>
+      <description>Lista JSON de stacks. Cada stack: {id,name,type:'folder'|'apps',path,style:'grid'|'fan',apps:[desktopId]}</description>
+    </key>
+
+    <key name="dock-order" type="s">
+      <default>"[]"</default>
+      <summary>Orden unificado de elementos anclados (favoritos y stacks mezclados)</summary>
+      <description>Lista JSON de tokens que define el orden combinado de favoritos y stacks en el dock. Cada token es "fav:&lt;appId&gt;" o "stack:&lt;stackId&gt;". Los elementos no listados se añaden al final.</description>
+    </key>
+
+    <key name="stack-style" enum="org.gnome.shell.extensions.dock-stack.stack-style">
+      <default>"grid"</default>
+      <summary>Estilo de despliegue de los stacks (grilla o abanico)</summary>
+    </key>
+
+    <key name="stack-sort" enum="org.gnome.shell.extensions.dock-stack.stack-sort">
+      <default>"asc"</default>
+      <summary>Orden de los elementos del stack (ascendente o descendente)</summary>
+    </key>
+
+    <key name="show-apps-button" type="b">
+      <default>true</default>
+      <summary>Mostrar botón de menú de aplicaciones</summary>
+    </key>
+
+    <key name="apps-button-icon" type="s">
+      <default>"view-app-grid-symbolic"</default>
+      <summary>Icono del botón de aplicaciones (nombre de icono o ruta de archivo)</summary>
+    </key>
+
+    <key name="apps-button-position" enum="org.gnome.shell.extensions.dock-stack.apps-button-position">
+      <default>"start"</default>
+      <summary>Posición del botón de aplicaciones (inicio o final del dock)</summary>
+    </key>
+
+    <key name="fan-curve" type="i">
+      <default>60</default>
+      <range min="0" max="220"/>
+      <summary>Curvatura de la tira en modo abanico (px)</summary>
+    </key>
+
+    <key name="disable-dash-to-dock" type="b">
+      <default>true</default>
+      <summary>Desactivar Dash to Dock mientras Dock Stack esté activo</summary>
+    </key>
+
+    <key name="hide-overview-dash" type="b">
+      <default>true</default>
+      <summary>Ocultar el dash y el botón de aplicaciones nativos en la vista de Actividades</summary>
+    </key>
+
+    <key name="enable-appindicator" type="b">
+      <default>false</default>
+      <summary>Mantener activa la extensión AppIndicator (iconos de bandeja en el top bar)</summary>
+    </key>
+
+    <key name="systray" type="b">
+      <default>true</default>
+      <summary>Mostrar iconos de bandeja (systray) de las apps en el panel superior</summary>
+    </key>
+
+    <key name="show-running" type="b">
+      <default>true</default>
+      <summary>Mostrar aplicaciones en ejecución (no favoritas) en el dock</summary>
+    </key>
+
+    <key name="running-indicators" type="b">
+      <default>true</default>
+      <summary>Mostrar puntos bajo las aplicaciones en ejecución</summary>
+    </key>
+
+    <key name="window-previews" type="b">
+      <default>true</default>
+      <summary>Mostrar miniaturas de las ventanas al pasar el ratón</summary>
+    </key>
+
+    <key name="custom-app-grid" type="b">
+      <default>true</default>
+      <summary>Usar una rejilla de aplicaciones propia en vez del overview de GNOME</summary>
+    </key>
+
+    <key name="appgrid-opacity" type="i">
+      <default>70</default>
+      <range min="0" max="100"/>
+      <summary>Opacidad de los marcos interiores de la rejilla (0-100)</summary>
+    </key>
+
+    <key name="appgrid-theme" enum="org.gnome.shell.extensions.dock-stack.appgrid-theme">
+      <default>"dark"</default>
+      <summary>Tema de la rejilla de aplicaciones (claro u oscuro)</summary>
+    </key>
+
+    <key name="appgrid-sort-desc" type="b">
+      <default>false</default>
+      <summary>Ordenar la rejilla en orden descendente (Z→A) en vez de ascendente</summary>
+    </key>
+  </schema>
+</schemalist>
