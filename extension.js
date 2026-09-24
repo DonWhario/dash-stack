@@ -17,6 +17,11 @@ import * as DND from 'resource:///org/gnome/shell/ui/dnd.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import {SysTrayManager} from './systray.js';
+import {makeTranslator} from './translations.js';
+
+// Traductor a nivel de módulo; se (re)configura en enable() y al cambiar la
+// clave 'language'. Por defecto identidad (español) hasta configurarse.
+let _ = (s) => s;
 
 const APP_SYSTEM = () => Shell.AppSystem.get_default();
 
@@ -115,7 +120,7 @@ class StackPopup extends St.BoxLayout {
             this._cells.push(cell);
         });
         if (entries.length === 0) {
-            const empty = new St.Label({style_class: 'dock-stack-cell-label', text: '(vacío)'});
+            const empty = new St.Label({style_class: 'dock-stack-cell-label', text: _('(vacío)')});
             this._grid.add_child(empty);
         }
     }
@@ -129,6 +134,7 @@ class StackPopup extends St.BoxLayout {
 export default class DockStacksExtension extends Extension {
     enable() {
         this._settings = this.getSettings();
+        _ = makeTranslator(this._settings);
         this._stackOverlay = null;
         this._stackPopup = null;
         this._stackGrab = null;
@@ -151,6 +157,12 @@ export default class DockStacksExtension extends Extension {
                 key === 'running-indicators' || key === 'window-previews' ||
                 key === 'dock-order')
                 this._rebuildItems();
+            else if (key === 'language') {
+                // Reconstruir el traductor y refrescar textos (dock y rejilla).
+                _ = makeTranslator(this._settings);
+                this._closeAppGrid();
+                this._rebuildItems();
+            }
             else if (key === 'position' || key === 'background-opacity')
                 this._applyStyle();
             else if (key === 'autohide' || key === 'intellihide')
@@ -654,8 +666,8 @@ export default class DockStacksExtension extends Extension {
                 this._attachContextMenu(btn, () => {
                     const entries = [];
                     if (app.get_n_windows() > 0)
-                        entries.push({label: 'Cerrar', callback: () => this._deferred(() => this._quitApp(app))});
-                    entries.push({label: 'Quitar del dock', callback: () =>
+                        entries.push({label: _('Cerrar'), callback: () => this._deferred(() => this._quitApp(app))});
+                    entries.push({label: _('Quitar del dock'), callback: () =>
                         this._deferred(() => AppFavorites.getAppFavorites().removeFavorite(app.get_id()))});
                     return entries;
                 });
@@ -677,9 +689,9 @@ export default class DockStacksExtension extends Extension {
                 this._attachTooltip(btn, stack.name);
                 this._makeReorderable(btn, 'pinned', index, {token: entry.token});
                 this._attachContextMenu(btn, () => ([
-                    {label: 'Editar en preferencias…', callback: () => this.openPreferences()},
+                    {label: _('Editar en preferencias…'), callback: () => this.openPreferences()},
                     {separator: true},
-                    {label: 'Eliminar del dock', callback: () =>
+                    {label: _('Eliminar del dock'), callback: () =>
                         this._deferred(() => this._removeStack(stack.id))},
                 ]));
                 this._dock.add_child(btn);
@@ -700,10 +712,10 @@ export default class DockStacksExtension extends Extension {
                 btn.connect('clicked', () => this._activateApp(app));
                 this._attachTooltip(btn, app.get_name());
                 this._attachContextMenu(btn, () => ([
-                    {label: 'Anclar a favoritos', callback: () =>
+                    {label: _('Anclar a favoritos'), callback: () =>
                         this._deferred(() => AppFavorites.getAppFavorites().addFavorite(app.get_id()))},
                     {separator: true},
-                    {label: 'Cerrar', callback: () => this._deferred(() => this._quitApp(app))},
+                    {label: _('Cerrar'), callback: () => this._deferred(() => this._quitApp(app))},
                 ]));
                 this._dock.add_child(btn);
                 this._appButtonList.push({app, btn});
@@ -737,9 +749,9 @@ export default class DockStacksExtension extends Extension {
             gicon = new Gio.ThemedIcon({name: 'view-app-grid-symbolic'});
         }
         const icon = new St.Icon({gicon, icon_size: iconSize});
-        const btn = new DockItemButton(icon, 'Aplicaciones', iconSize);
+        const btn = new DockItemButton(icon, _('Aplicaciones'), iconSize);
         btn.add_style_class_name('dock-apps-button');
-        this._attachTooltip(btn, 'Aplicaciones');
+        this._attachTooltip(btn, _('Aplicaciones'));
         btn.connect('clicked', () => {
             this._closeStack();
             if (this._settings.get_boolean('custom-app-grid')) {
@@ -1071,8 +1083,8 @@ export default class DockStacksExtension extends Extension {
 
     _showAppsButtonMenu(sourceActor) {
         this._openMenu(sourceActor, [
-            {label: 'Configurar Dock Stack…', callback: () => this.openPreferences()},
-            {label: 'Ver todas las aplicaciones', callback: () => this._showApplications()},
+            {label: _('Configurar Dock Stack…'), callback: () => this.openPreferences()},
+            {label: _('Ver todas las aplicaciones'), callback: () => this._showApplications()},
         ]);
     }
 
@@ -1213,7 +1225,7 @@ export default class DockStacksExtension extends Extension {
                     catRow.add_child(new St.Icon({gicon: cicon, icon_size: 20, y_align: Clutter.ActorAlign.CENTER}));
             }
             const catLabel = new St.Label({
-                text: cat.label,
+                text: _(cat.label),
                 x_expand: true,
                 x_align: Clutter.ActorAlign.START,
                 y_align: Clutter.ActorAlign.CENTER,
@@ -1262,7 +1274,7 @@ export default class DockStacksExtension extends Extension {
         }
         cfgBox.add_child(new St.Icon({gicon: cfgGicon, icon_size: 22, y_align: Clutter.ActorAlign.CENTER}));
         const cfgLbl = new St.Label({
-            text: 'Configuración',
+            text: _('Configuración'),
             y_align: Clutter.ActorAlign.CENTER,
             x_expand: true,
             x_align: Clutter.ActorAlign.START,
@@ -1305,7 +1317,7 @@ export default class DockStacksExtension extends Extension {
             can_focus: true,
             x_expand: false,
         });
-        search.set_hint_text('Buscar aplicaciones…');
+        search.set_hint_text(_('Buscar aplicaciones…'));
         search.set_width(Math.round(Math.min(520, (gridAreaW - 60) * 0.6)));
         topRow.add_child(search);
         this._appGridSearch = search;
@@ -1431,7 +1443,7 @@ export default class DockStacksExtension extends Extension {
         if (apps.length === 0) {
             const empty = new St.Label({
                 style_class: 'dock-appgrid-label',
-                text: 'Sin resultados',
+                text: _('Sin resultados'),
             });
             box.add_child(empty);
         }
@@ -1471,15 +1483,15 @@ export default class DockStacksExtension extends Extension {
         const isFav = favs.getFavoriteMap()[appInfo.get_id()] != null;
 
         const entries = [
-            {label: 'Lanzar', cb: () => this._launchAppInfo(appInfo)},
+            {label: _('Lanzar'), cb: () => this._launchAppInfo(appInfo)},
         ];
         if (isFav) {
-            entries.push({label: 'Quitar de favoritos', cb: () => {
+            entries.push({label: _('Quitar de favoritos'), cb: () => {
                 this._deferred(() => favs.removeFavorite(appInfo.get_id()));
                 this._closeAppGridMenu();
             }});
         } else {
-            entries.push({label: 'Anclar a favoritos', cb: () => {
+            entries.push({label: _('Anclar a favoritos'), cb: () => {
                 this._deferred(() => favs.addFavorite(appInfo.get_id()));
                 this._closeAppGridMenu();
             }});
