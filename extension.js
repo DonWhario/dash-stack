@@ -581,8 +581,9 @@ export default class DockStacksExtension extends Extension {
             reactive: false,
         });
 
+        this._strutsActive = this._settings.get_boolean('reserve-space');
         Main.layoutManager.addChrome(this._container, {
-            affectsStruts: this._settings.get_boolean('reserve-space'),
+            affectsStruts: this._strutsActive,
             trackFullscreen: true,
         });
 
@@ -2157,11 +2158,14 @@ export default class DockStacksExtension extends Extension {
         if (!this._container)
             return;
         const reserve = this._settings.get_boolean('reserve-space');
-        Main.layoutManager.removeChrome(this._container);
-        Main.layoutManager.addChrome(this._container, {
-            affectsStruts: reserve,
-            trackFullscreen: true,
-        });
+        this._strutsActive = reserve;
+        try {
+            Main.layoutManager.removeChrome(this._container);
+            Main.layoutManager.addChrome(this._container, {
+                affectsStruts: reserve,
+                trackFullscreen: true,
+            });
+        } catch (_e) { /* el chrome puede no estar añadido aún */ }
         this._relayout();
         this._updateVisibility();
     }
@@ -2170,17 +2174,22 @@ export default class DockStacksExtension extends Extension {
     _updateVisibility() {
         if (!this._container)
             return;
-        // En pantalla completa (juegos, vídeo) ocultar siempre el dock,
-        // por encima de "reservar espacio" / intellihide / autohide.
-        if (this._isMonitorInFullscreen()) {
+        // En pantalla completa o con una ventana MAXIMIZADA en el monitor
+        // principal, ocultar el dock y LIBERAR el espacio reservado (juegos,
+        // vídeo o apps maximizadas), por encima de "reservar espacio" /
+        // intellihide / autohide.
+        if (this._shouldHideForWindow()) {
+            this._setStruts(false);
             this._showDock(false);
             return;
         }
         // Si se reserva espacio, el dock está siempre visible (no se oculta)
         if (this._settings.get_boolean('reserve-space')) {
+            this._setStruts(true);
             this._showDock(true);
             return;
         }
+        this._setStruts(false);
         const autohide = this._settings.get_boolean('autohide');
         const intellihide = this._settings.get_boolean('intellihide');
 
@@ -2204,6 +2213,87 @@ export default class DockStacksExtension extends Extension {
         } catch (_e) {
             return false;
         }
+    }
+
+    // ¿Debe ocultarse el dock por la ventana activa? Pantalla completa real,
+    // "ventana sin bordes" que cubre todo el monitor, o ventana MAXIMIZADA.
+    _shouldHideForWindow() {
+        return this._isMonitorInFullscreen() ||
+               this._hasFullMonitorWindow() ||
+               this._focusedWindowMaximized();
+    }
+
+    // Ventana enfocada maximizada (ambos ejes) en el monitor principal.
+    // Cubre WoW/juegos en modo "ventana (pantalla completa)"/borderless, que
+    // GNOME reporta como una ventana normal maximizada.
+    _focusedWindowMaximized() {
+        try {
+            const w = global.display.get_focus_window();
+            if (!w || w.minimized)
+                return false;
+            if (w.get_monitor() !== Main.layoutManager.primaryIndex)
+                return false;
+            if (w.get_window_type() !== Meta.WindowType.NORMAL)
+                return false;
+            const both = Meta.MaximizeFlags.HORIZONTAL | Meta.MaximizeFlags.VERTICAL;
+            return !!w.get_maximized && w.get_maximized() === both;
+        } catch (_e) {
+            return false;
+        }
+    }
+
+    // Activa/desactiva el espacio reservado (struts) en caliente. Solo re-añade
+    // el chrome cuando cambia el estado, para no provocar recolocaciones en
+    // cadena. Al ocultar el dock por un juego/ventana maximizada liberamos el
+    // espacio; al volver, se restaura si "reservar espacio" está activo.
+    _setStruts(active) {
+        if (!this._container)
+            return;
+        if (this._strutsActive === active)
+            return;
+        this._strutsActive = active;
+        try {
+            Main.layoutManager.removeChrome(this._container);
+            Main.layoutManager.addChrome(this._container, {
+                affectsStruts: active,
+                trackFullscreen: true,
+            });
+            this._relayout();
+        } catch (_e) { /* el chrome puede no estar añadido aún */ }
+    }
+
+    // Detecta juegos en "ventana sin bordes" (fake fullscreen): una ventana
+    // NORMAL, no maximizada, cuyo marco cubre el monitor COMPLETO (incluida la
+    // zona de la barra superior). Comparar con la geometría completa del
+    // monitor —no con el área de trabajo— distingue este modo de una ventana
+    // simplemente maximizada (que respeta la barra superior).
+    _hasFullMonitorWindow() {
+        try {
+            const idx = Main.layoutManager.primaryIndex;
+            const m = Main.layoutManager.primaryMonitor;
+            if (!m)
+                return false;
+            const ws = global.workspace_manager.get_active_workspace();
+            const windows = global.display.get_tab_list(Meta.TabList.NORMAL, ws);
+            for (const w of windows) {
+                if (!w || w.minimized)
+                    continue;
+                if (w.get_monitor() !== idx)
+                    continue;
+                if (w.get_window_type() !== Meta.WindowType.NORMAL)
+                    continue;
+                // Ignorar ventanas simplemente maximizadas.
+                if (w.get_maximized &&
+                    w.get_maximized() === (Meta.MaximizeFlags.HORIZONTAL | Meta.MaximizeFlags.VERTICAL))
+                    continue;
+                const r = w.get_frame_rect();
+                if (r.x <= m.x && r.y <= m.y &&
+                    r.x + r.width >= m.x + m.width &&
+                    r.y + r.height >= m.y + m.height)
+                    return true;
+            }
+        } catch (_e) { /* sin cambios */ }
+        return false;
     }
 
     _windowOverlapsDock() {
