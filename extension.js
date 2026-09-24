@@ -2215,31 +2215,14 @@ export default class DockStacksExtension extends Extension {
         }
     }
 
-    // ¿Debe ocultarse el dock por la ventana activa? Pantalla completa real,
-    // "ventana sin bordes" que cubre todo el monitor, o ventana MAXIMIZADA.
+    // ¿Debe ocultarse el dock por la ventana activa? Solo en PANTALLA COMPLETA
+    // real (lo que hacen los juegos como WoW en modo "Pantalla completa"), o una
+    // ventana sin bordes que cubre TODO el monitor. NO con ventanas meramente
+    // maximizadas (el launcher de Battle.net, Firefox, etc.), que son
+    // indistinguibles entre sí y deben conservar las barras.
     _shouldHideForWindow() {
         return this._isMonitorInFullscreen() ||
-               this._hasFullMonitorWindow() ||
-               this._focusedWindowMaximized();
-    }
-
-    // Ventana enfocada maximizada (ambos ejes) en el monitor principal.
-    // Cubre WoW/juegos en modo "ventana (pantalla completa)"/borderless, que
-    // GNOME reporta como una ventana normal maximizada.
-    _focusedWindowMaximized() {
-        try {
-            const w = global.display.get_focus_window();
-            if (!w || w.minimized)
-                return false;
-            if (w.get_monitor() !== Main.layoutManager.primaryIndex)
-                return false;
-            if (w.get_window_type() !== Meta.WindowType.NORMAL)
-                return false;
-            const both = Meta.MaximizeFlags.HORIZONTAL | Meta.MaximizeFlags.VERTICAL;
-            return !!w.get_maximized && w.get_maximized() === both;
-        } catch (_e) {
-            return false;
-        }
+               this._hasFullMonitorWindow();
     }
 
     // Activa/desactiva el espacio reservado (struts) en caliente. Solo re-añade
