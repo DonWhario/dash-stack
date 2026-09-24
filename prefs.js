@@ -35,12 +35,36 @@ function writeStacks(settings, stacks) {
 export default class DockStacksPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const settings = this.getSettings();
-        _ = makeTranslator(settings);
         window.set_default_size(720, 640);
+        this._prefPages = [];
 
-        this._buildGeneralPage(window, settings);
-        this._buildStacksPage(window, settings);
-        this._buildAboutPage(window);
+        const build = () => {
+            _ = makeTranslator(settings);
+            // Quitar las páginas previas (para reconstruir traducidas)
+            for (const p of this._prefPages) {
+                try { window.remove(p); } catch (_e) { /* ya quitada */ }
+            }
+            this._prefPages = [];
+            this._buildGeneralPage(window, settings);
+            this._buildStacksPage(window, settings);
+            this._buildAboutPage(window);
+        };
+        build();
+
+        // Al cambiar el idioma, reconstruir las páginas para traducir esta
+        // ventana en vivo. Se difiere para no destruir el widget que emitió
+        // el cambio durante su propia señal.
+        const langId = settings.connect('changed::language', () => {
+            GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+                if (this._prefPages)
+                    build();
+                return GLib.SOURCE_REMOVE;
+            });
+        });
+        window.connect('destroy', () => {
+            this._prefPages = null;
+            try { settings.disconnect(langId); } catch (_e) { /* ok */ }
+        });
     }
 
     // ------------------------------------------------------------- Acerca De
@@ -50,6 +74,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             icon_name: 'help-about-symbolic',
         });
         window.add(page);
+        if (this._prefPages) this._prefPages.push(page);
 
         const group = new Adw.PreferencesGroup();
         page.add(group);
@@ -127,6 +152,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             icon_name: 'preferences-system-symbolic',
         });
         window.add(page);
+        if (this._prefPages) this._prefPages.push(page);
 
         // Idioma
         const langGroup = new Adw.PreferencesGroup({title: _('Idioma')});
@@ -544,6 +570,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             icon_name: 'view-grid-symbolic',
         });
         window.add(page);
+        if (this._prefPages) this._prefPages.push(page);
 
         const listGroup = new Adw.PreferencesGroup({
             title: _('Agrupaciones'),
