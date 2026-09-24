@@ -581,9 +581,8 @@ export default class DockStacksExtension extends Extension {
             reactive: false,
         });
 
-        this._strutsActive = this._settings.get_boolean('reserve-space');
         Main.layoutManager.addChrome(this._container, {
-            affectsStruts: this._strutsActive,
+            affectsStruts: this._settings.get_boolean('reserve-space'),
             trackFullscreen: true,
         });
 
@@ -2158,7 +2157,6 @@ export default class DockStacksExtension extends Extension {
         if (!this._container)
             return;
         const reserve = this._settings.get_boolean('reserve-space');
-        this._strutsActive = reserve;
         try {
             Main.layoutManager.removeChrome(this._container);
             Main.layoutManager.addChrome(this._container, {
@@ -2174,22 +2172,20 @@ export default class DockStacksExtension extends Extension {
     _updateVisibility() {
         if (!this._container)
             return;
-        // En pantalla completa o con una ventana MAXIMIZADA en el monitor
-        // principal, ocultar el dock y LIBERAR el espacio reservado (juegos,
-        // vídeo o apps maximizadas), por encima de "reservar espacio" /
-        // intellihide / autohide.
+        // En pantalla completa (juegos, vídeo) ocultar el dock, por encima de
+        // "reservar espacio" / intellihide / autohide. No se tocan los struts:
+        // una ventana en pantalla completa los ignora y GNOME oculta el chrome
+        // por 'trackFullscreen'. (Recrear el chrome aquí causaba que la primera
+        // transición a pantalla completa no ocultara bien las barras.)
         if (this._shouldHideForWindow()) {
-            this._setStruts(false);
             this._showDock(false);
             return;
         }
         // Si se reserva espacio, el dock está siempre visible (no se oculta)
         if (this._settings.get_boolean('reserve-space')) {
-            this._setStruts(true);
             this._showDock(true);
             return;
         }
-        this._setStruts(false);
         const autohide = this._settings.get_boolean('autohide');
         const intellihide = this._settings.get_boolean('intellihide');
 
@@ -2223,26 +2219,6 @@ export default class DockStacksExtension extends Extension {
     _shouldHideForWindow() {
         return this._isMonitorInFullscreen() ||
                this._hasFullMonitorWindow();
-    }
-
-    // Activa/desactiva el espacio reservado (struts) en caliente. Solo re-añade
-    // el chrome cuando cambia el estado, para no provocar recolocaciones en
-    // cadena. Al ocultar el dock por un juego/ventana maximizada liberamos el
-    // espacio; al volver, se restaura si "reservar espacio" está activo.
-    _setStruts(active) {
-        if (!this._container)
-            return;
-        if (this._strutsActive === active)
-            return;
-        this._strutsActive = active;
-        try {
-            Main.layoutManager.removeChrome(this._container);
-            Main.layoutManager.addChrome(this._container, {
-                affectsStruts: active,
-                trackFullscreen: true,
-            });
-            this._relayout();
-        } catch (_e) { /* el chrome puede no estar añadido aún */ }
     }
 
     // Detecta juegos en "ventana sin bordes" (fake fullscreen): una ventana
