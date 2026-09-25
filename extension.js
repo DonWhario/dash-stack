@@ -1131,21 +1131,6 @@ export default class DockStacksExtension extends Extension {
             width: monitor.width,
             height: monitor.height,
         });
-        overlay.connect('button-press-event', (_actor, event) => {
-            // Cerrar SOLO si el clic fue directamente sobre el fondo (overlay),
-            // no sobre el panel/botones. Antes se absorbía el evento en el
-            // panel con EVENT_STOP, lo que rompía el ciclo pulsar→soltar de los
-            // St.Button internos (nunca emitían 'clicked').
-            const src = event.get_source ? event.get_source() : null;
-            if (src && src !== overlay)
-                return Clutter.EVENT_PROPAGATE;
-            if (this._appGridMenu) {
-                this._closeAppGridMenu();
-                return Clutter.EVENT_STOP;
-            }
-            this._closeAppGrid();
-            return Clutter.EVENT_STOP;
-        });
         overlay.connect('key-press-event', (_a, ev) => {
             if (ev.get_key_symbol() === Clutter.KEY_Escape) {
                 if (this._appGridMenu)
@@ -1159,6 +1144,25 @@ export default class DockStacksExtension extends Extension {
         Main.layoutManager.uiGroup.add_child(overlay);
         // Registrar ya el overlay para poder cerrarlo siempre (aunque algo falle)
         this._appGridOverlay = overlay;
+
+        // Fondo HERMANO (no ancestro) que captura los clics fuera del panel para
+        // cerrar. Se usa un hermano —como en el popup de stacks— en lugar de
+        // absorber el evento en un ancestro del panel, porque eso rompía el
+        // ciclo pulsar→soltar de los St.Button internos (no emitían 'clicked').
+        const bg = new St.Widget({
+            reactive: true,
+            x: 0, y: 0,
+            width: monitor.width,
+            height: monitor.height,
+        });
+        bg.connect('button-press-event', () => {
+            if (this._appGridMenu)
+                this._closeAppGridMenu();
+            else
+                this._closeAppGrid();
+            return Clutter.EVENT_STOP;
+        });
+        overlay.add_child(bg);
 
         const ph = Math.min(monitor.height - 140, 820);
         const sidebarW = 265;
