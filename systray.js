@@ -107,6 +107,10 @@ class TrayIcon extends PanelMenu.Button {
         this._icon = new St.Icon({style_class: 'system-status-icon'});
         this.add_child(this._icon);
 
+        // GNOME 50: los clics no llegan por vfunc_event; usar señales explícitas.
+        this.connect('button-press-event', (_a, event) => this._onButtonPress(event));
+        this.connect('scroll-event', (_a, event) => this._onScroll(event));
+
         this._proxy = new ItemProxy(Gio.DBus.session, busName, objectPath,
             (proxy, error) => {
                 if (error) {
@@ -127,39 +131,78 @@ class TrayIcon extends PanelMenu.Button {
         this.connect('destroy', () => this._onDestroy());
     }
 
-    // Left click → Activate ; wheel → Scroll
-    vfunc_event(event) {
-        const type = event.type();
-        if (type === Clutter.EventType.BUTTON_PRESS) {
-            const btn = event.get_button();
-            const [x, y] = global.get_pointer();
-            if (btn === 1) {
-                this._call('Activate', x, y);
-                return Clutter.EVENT_STOP;
-            } else if (btn === 2) {
-                this._call('SecondaryActivate', x, y);
-                return Clutter.EVENT_STOP;
-            } else if (btn === 3) {
-                // The app menu (dbusmenu) or its own ContextMenu
-                if (this._menuPath && this._menuPath !== '/') {
-                    this._openDBusMenu();
-                    return Clutter.EVENT_STOP;
-                }
-                this._call('ContextMenu', x, y);
-                return Clutter.EVENT_STOP;
-            }
-        } else if (type === Clutter.EventType.SCROLL) {
-            const dir = event.get_scroll_direction();
-            let delta = 0, orient = 'vertical';
-            if (dir === Clutter.ScrollDirection.UP) delta = -1;
-            else if (dir === Clutter.ScrollDirection.DOWN) delta = 1;
-            else if (dir === Clutter.ScrollDirection.LEFT) { delta = -1; orient = 'horizontal'; }
-            else if (dir === Clutter.ScrollDirection.RIGHT) { delta = 1; orient = 'horizontal'; }
-            if (delta !== 0)
-                this._callScroll(delta, orient);
+    // Click handling (single path via the 'button-press-event' signal, to avoid
+    // double handling with vfunc_event across GNOME versions).
+    //
+    // Behavior matches AppIndicator/KStatusNotifierItem support:
+    //  - Left click:  if the item is menu-only (ItemIsMenu) or has a menu but
+    //                 no usable Activate, show its menu; otherwise Activate.
+    //  - Middle:      SecondaryActivate.
+    //  - Right click: always show the menu (dbusmenu, or ContextMenu fallback).
+    _onButtonPress(event) {
+        const btn = event.get_button();
+        const [x, y] = global.get_pointer();
+        if (btn === 1) {
+            if (this._itemIsMenu && this._hasMenu())
+                this._showMenu(x, y);
+            else
+                this._activate(x, y);
+            return Clutter.EVENT_STOP;
+        } else if (btn === 2) {
+            this._call('SecondaryActivate', x, y);
+            return Clutter.EVENT_STOP;
+        } else if (btn === 3) {
+            this._showMenu(x, y);
             return Clutter.EVENT_STOP;
         }
-        return super.vfunc_event(event);
+        return Clutter.EVENT_PROPAGATE;
+    }
+
+    _hasMenu() {
+        return !!(this._menuPath && this._menuPath !== '/');
+    }
+
+    // Shows the app's menu: the com.canonical.dbusmenu layout if available,
+    // otherwise asks the item to show its own ContextMenu.
+    _showMenu(x, y) {
+        if (this._hasMenu())
+            this._openDBusMenu();
+        else
+            this._call('ContextMenu', x, y);
+    }
+
+    _onScroll(event) {
+        const dir = event.get_scroll_direction();
+        let delta = 0, orient = 'vertical';
+        if (dir === Clutter.ScrollDirection.UP) delta = -1;
+        else if (dir === Clutter.ScrollDirection.DOWN) delta = 1;
+        else if (dir === Clutter.ScrollDirection.LEFT) { delta = -1; orient = 'horizontal'; }
+        else if (dir === Clutter.ScrollDirection.RIGHT) { delta = 1; orient = 'horizontal'; }
+        if (delta !== 0)
+            this._callScroll(delta, orient);
+        return Clutter.EVENT_STOP;
+    }
+
+    // Activate with a fallback: if the app doesn't implement Activate and it has
+    // a menu, show the menu instead (so menu-only apps still respond to a click).
+    _activate(x, y) {
+        try {
+            this._proxy.g_connection.call(
+                this._busName, this._objectPath, 'org.kde.StatusNotifierItem',
+                'Activate', new GLib.Variant('(ii)', [Math.round(x), Math.round(y)]),
+                null, Gio.DBusCallFlags.NONE, -1, null,
+                (conn, res) => {
+                    try {
+                        conn.call_finish(res);
+                    } catch (_e) {
+                        if (this._hasMenu())
+                            this._showMenu(x, y);
+                    }
+                });
+        } catch (_e) {
+            if (this._hasMenu())
+                this._showMenu(x, y);
+        }
     }
 
     _call(method, x, y) {
@@ -205,6 +248,8 @@ class TrayIcon extends PanelMenu.Button {
         const get = (k) => (props[k] ? props[k].deep_unpack() : undefined);
         const status = get('Status') || 'Active';
         this._menuPath = get('Menu') || null;
+        // ItemIsMenu: the app has no useful Activate; a click should show its menu.
+        this._itemIsMenu = get('ItemIsMenu') === true;
 
         // Hide if the item is passive
         this.visible = status !== 'Passive';
