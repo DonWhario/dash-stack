@@ -98,7 +98,7 @@ class StackPopup extends St.BoxLayout {
         this.add_child(this._grid);
     }
 
-    setEntries(entries, columns, iconSize, onActivate) {
+    setEntries(entries, columns, iconSize, onActivate, showIcon = true) {
         this._grid.destroy_all_children();
         this._cells = [];
         let row = null;
@@ -109,7 +109,8 @@ class StackPopup extends St.BoxLayout {
             }
             const cell = new St.Button({style_class: 'dock-stack-cell', can_focus: true});
             const cbox = new St.BoxLayout({orientation: Clutter.Orientation.VERTICAL, x_align: Clutter.ActorAlign.CENTER});
-            cbox.add_child(iconForGicon(entry.gicon, iconSize));
+            if (showIcon)
+                cbox.add_child(iconForGicon(entry.gicon, iconSize));
             const lbl = new St.Label({style_class: 'dock-stack-cell-label', text: entry.name});
             lbl.clutter_text.set_line_wrap(true);
             lbl.clutter_text.set_ellipsize(3 /* PANGO_ELLIPSIZE_END */);
@@ -1868,7 +1869,8 @@ export default class DockStacksExtension extends Extension {
             this._settings.get_int('stack-columns'),
             Math.max(1, entries.length));
         const popup = new StackPopup(stack.name);
-        popup.setEntries(entries, columns, iconSize, onActivate);
+        popup.setEntries(entries, columns, iconSize, onActivate,
+            this._settings.get_boolean('stack-show-icon'));
         overlay.add_child(popup);
 
         const [bx, by] = sourceBtn.get_transformed_position();
@@ -1992,8 +1994,16 @@ export default class DockStacksExtension extends Extension {
             y_align: Clutter.ActorAlign.CENTER,
         });
         lbl.clutter_text.set_ellipsize(3 /* END */);
+        const showIcon = this._settings.get_boolean('stack-show-icon');
+        const iconLeft = this._settings.get_string('stack-icon-position') === 'left';
+        const icon = showIcon
+            ? new St.Icon({gicon: entry.gicon, icon_size: iconSize, y_align: Clutter.ActorAlign.CENTER})
+            : null;
+        if (icon && iconLeft)
+            frame.add_child(icon);
         frame.add_child(lbl);
-        frame.add_child(new St.Icon({gicon: entry.gicon, icon_size: iconSize}));
+        if (icon && !iconLeft)
+            frame.add_child(icon);
         cell.set_child(frame);
         cell.connect('clicked', onClick);
         return cell;

@@ -16,6 +16,11 @@
     <value value="1" nick="desc"/>
   </enum>
 
+  <enum id="org.gnome.shell.extensions.dock-stack.stack-icon-position">
+    <value value="0" nick="left"/>
+    <value value="1" nick="right"/>
+  </enum>
+
   <enum id="org.gnome.shell.extensions.dock-stack.apps-button-position">
     <value value="0" nick="start"/>
     <value value="1" nick="end"/>
@@ -127,6 +132,16 @@
     <key name="stack-sort" enum="org.gnome.shell.extensions.dock-stack.stack-sort">
       <default>"asc"</default>
       <summary>Orden de los elementos del stack (ascendente o descendente)</summary>
+    </key>
+
+    <key name="stack-show-icon" type="b">
+      <default>true</default>
+      <summary>Mostrar el icono de cada elemento en el stack desplegado</summary>
+    </key>
+
+    <key name="stack-icon-position" enum="org.gnome.shell.extensions.dock-stack.stack-icon-position">
+      <default>"left"</default>
+      <summary>Posición del icono respecto al texto en el stack (izquierda o derecha)</summary>
     </key>
 
     <key name="show-apps-button" type="b">

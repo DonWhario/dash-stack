@@ -548,6 +548,29 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         });
         sgroup.add(sortRow);
 
+        // Mostrar u ocultar el icono de cada elemento del stack
+        const showIconRow = new Adw.SwitchRow({
+            title: _('Mostrar icono en los stacks'),
+            subtitle: _('Muestra el icono de cada app/archivo en el stack desplegado'),
+        });
+        settings.bind('stack-show-icon', showIconRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+        sgroup.add(showIconRow);
+
+        // Posición del icono respecto al texto (izquierda / derecha) — modo abanico
+        const iconPosModel = new Gtk.StringList();
+        [_('Izquierda'), _('Derecha')].forEach(s => iconPosModel.append(s));
+        const iconPosKeys = ['left', 'right'];
+        const iconPosRow = new Adw.ComboRow({
+            title: _('Posición del icono'),
+            subtitle: _('Icono a la izquierda o derecha del texto (modo abanico)'),
+            model: iconPosModel,
+            selected: Math.max(0, iconPosKeys.indexOf(settings.get_string('stack-icon-position'))),
+        });
+        iconPosRow.connect('notify::selected', () => {
+            settings.set_string('stack-icon-position', iconPosKeys[iconPosRow.selected]);
+        });
+        sgroup.add(iconPosRow);
+
         const colRow = new Adw.SpinRow({
             title: _('Columnas máximas'),
             adjustment: new Gtk.Adjustment({lower: 1, upper: 8, step_increment: 1, value: settings.get_int('stack-columns')}),
