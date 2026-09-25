@@ -3,7 +3,7 @@
     border-radius: 14px;
     spacing: 4px;
     border: 1px solid rgba(255, 255, 255, 0.10);
-    /* background-color se aplica inline según opacidad configurada */
+    /* background-color is applied inline per the configured opacity */
 }
 
 .dock-item {
@@ -31,7 +31,7 @@
     background-color: rgba(255, 255, 255, 0.20);
 }
 
-/* ---- indicadores de ejecución (puntos) ---- */
+/* ---- running indicators (dots) ---- */
 .dock-running-indicator {
     height: 7px;
     min-height: 7px;
@@ -54,7 +54,7 @@
     background-color: #4c9aff;
 }
 
-/* ---- popup de stack ---- */
+/* ---- stack popup ---- */
 .dock-stack-popup {
     background-color: rgba(40, 40, 40, 0.92);
     border: 1px solid rgba(255, 255, 255, 0.12);
@@ -98,14 +98,14 @@
     padding-top: 4px;
 }
 
-/* ---- modo abanico (estilo macOS) ---- */
+/* ---- fan mode (macOS style) ---- */
 .dock-fan-cell {
     border-radius: 16px;
     padding: 2px;
     transition-duration: 120ms;
 }
 
-/* El marco/pastilla envuelve el nombre y el icono juntos */
+/* The frame/pill wraps the name and the icon together */
 .dock-fan-frame {
     spacing: 10px;
     padding: 6px 10px;
@@ -127,22 +127,22 @@
     max-width: 220px;
 }
 
-/* ---- botón de menú de aplicaciones ---- */
+/* ---- applications menu button ---- */
 .dock-apps-button:hover {
     background-color: rgba(255, 255, 255, 0.18);
 }
 
-/* ---- rejilla de aplicaciones propia (Launchpad) ---- */
+/* ---- custom applications grid (Launchpad) ---- */
 .dock-appgrid-overlay {
     background-color: rgba(0, 0, 0, 0.45);
 }
 
-/* contenedor transparente que separa los dos marcos */
+/* transparent container separating the two frames */
 .dock-appgrid-container {
     spacing: 16px;
 }
 
-/* marco EXTERIOR: borde y fondo sutil para que se vea el marco */
+/* OUTER frame: subtle border and background so the frame is visible */
 .dock-appgrid-sidebar,
 .dock-appgrid-apps {
     background-color: rgba(18, 18, 20, 0.55);
@@ -152,7 +152,7 @@
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
 }
 
-/* marco INTERIOR translúcido (el color/opacidad se aplican en línea) */
+/* translucent INNER frame (color/opacity applied inline) */
 .dock-appgrid-inner {
     border: 1px solid rgba(255, 255, 255, 0.28);
     border-radius: 14px;
@@ -260,7 +260,7 @@
     padding-top: 6px;
 }
 
-/* ---- Tema CLARO: marcos blancos → texto oscuro y bordes legibles ---- */
+/* ---- LIGHT theme: white frames → dark text and legible borders ---- */
 .dock-appgrid-container.light .dock-appgrid-inner {
     border-color: rgba(0, 0, 0, 0.20);
 }
@@ -313,7 +313,7 @@
     background-color: rgba(255, 255, 255, 0.16);
 }
 
-/* ---- tooltip (nombre) ---- */
+/* ---- tooltip (name) ---- */
 .dock-tooltip {
     background-color: rgba(30, 30, 30, 0.95);
     color: #ffffff;
@@ -324,7 +324,7 @@
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
-/* ---- miniaturas de ventanas al pasar el ratón ---- */
+/* ---- window thumbnails on hover ---- */
 .dock-preview {
     background-color: rgba(40, 40, 40, 0.92);
     border: 1px solid rgba(255, 255, 255, 0.12);

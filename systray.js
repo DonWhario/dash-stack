@@ -1,6 +1,6 @@
-/* Dock Stack — host de bandeja (StatusNotifierItem / AppIndicator)
- * Registra org.kde.StatusNotifierWatcher, actúa como host y muestra los
- * iconos de bandeja de las apps en el panel superior de GNOME.
+/* Dock Stack — tray host (StatusNotifierItem / AppIndicator)
+ * Registers org.kde.StatusNotifierWatcher, acts as the host and shows the
+ * apps' tray icons in the GNOME top panel.
  */
 
 import GObject from 'gi://GObject';
@@ -56,11 +56,11 @@ const ITEM_XML = `<node>
 
 const ItemProxy = Gio.DBusProxy.makeProxyWrapper(ITEM_XML);
 
-// ---- Convierte un pixmap SNI (ARGB32 big-endian) a un Gio.Icon PNG ----
+// ---- Converts an SNI pixmap (ARGB32 big-endian) to a Gio.Icon PNG ----
 function pixmapToGicon(pixmaps) {
     if (!pixmaps || pixmaps.length === 0)
         return null;
-    // Elegir el de mayor área
+    // Pick the one with the largest area
     let best = null;
     for (const p of pixmaps) {
         const w = p[0], h = p[1];
@@ -116,7 +116,7 @@ class TrayIcon extends PanelMenu.Button {
                 this._refresh();
             });
 
-        // Señales de cambios del item
+        // Item change signals
         this._sigIds = [];
         for (const sig of ['NewIcon', 'NewAttentionIcon', 'NewStatus', 'NewTitle', 'NewToolTip']) {
             try {
@@ -127,7 +127,7 @@ class TrayIcon extends PanelMenu.Button {
         this.connect('destroy', () => this._onDestroy());
     }
 
-    // Clic izquierdo → Activate ; rueda → Scroll
+    // Left click → Activate ; wheel → Scroll
     vfunc_event(event) {
         const type = event.type();
         if (type === Clutter.EventType.BUTTON_PRESS) {
@@ -140,7 +140,7 @@ class TrayIcon extends PanelMenu.Button {
                 this._call('SecondaryActivate', x, y);
                 return Clutter.EVENT_STOP;
             } else if (btn === 3) {
-                // Menú de la app (dbusmenu) o su propio ContextMenu
+                // The app menu (dbusmenu) or its own ContextMenu
                 if (this._menuPath && this._menuPath !== '/') {
                     this._openDBusMenu();
                     return Clutter.EVENT_STOP;
@@ -182,7 +182,7 @@ class TrayIcon extends PanelMenu.Button {
         } catch (_e) { /* ignore */ }
     }
 
-    // Relee las propiedades (SNI no siempre emite PropertiesChanged)
+    // Re-reads properties (SNI doesn't always emit PropertiesChanged)
     _refresh() {
         this._proxy.g_connection.call(
             this._busName, this._objectPath,
@@ -206,7 +206,7 @@ class TrayIcon extends PanelMenu.Button {
         const status = get('Status') || 'Active';
         this._menuPath = get('Menu') || null;
 
-        // Ocultar si el item está pasivo
+        // Hide if the item is passive
         this.visible = status !== 'Passive';
 
         const useAttention = status === 'NeedsAttention';
@@ -218,7 +218,7 @@ class TrayIcon extends PanelMenu.Button {
             if (iconName[0] === '/') {
                 gicon = Gio.icon_new_for_string(iconName);
             } else if (themePath) {
-                // Buscar el archivo en la ruta de tema propia de la app
+                // Look for the file in the app's own theme path
                 for (const ext of ['.png', '.svg', '']) {
                     const p = GLib.build_filenamev([themePath, iconName + ext]);
                     if (GLib.file_test(p, GLib.FileTest.EXISTS)) {
@@ -242,10 +242,10 @@ class TrayIcon extends PanelMenu.Button {
         this._icon.set_gicon(gicon);
     }
 
-    // ---- Menú (com.canonical.dbusmenu) básico ----
+    // ---- Basic menu (com.canonical.dbusmenu) ----
     _openDBusMenu() {
         const conn = this._proxy.g_connection;
-        // AboutToShow y luego GetLayout
+        // AboutToShow and then GetLayout
         conn.call(this._busName, this._menuPath, 'com.canonical.dbusmenu',
             'AboutToShow', new GLib.Variant('(i)', [0]), null,
             Gio.DBusCallFlags.NONE, -1, null, () => {
@@ -277,7 +277,7 @@ class TrayIcon extends PanelMenu.Button {
     }
 
     _unwrapNode(v) {
-        // v es un variant "v" que envuelve (ia{sv}av)
+        // v is a "v" variant wrapping (ia{sv}av)
         const val = (v && v.deep_unpack) ? v.deep_unpack() : v;
         return val;
     }
@@ -392,7 +392,7 @@ export class SysTrayManager {
     }
 
     _onNameAcquired() {
-        // Registrarnos como host (nombre único)
+        // Register ourselves as host (unique name)
         const hostName = `org.kde.StatusNotifierHost-DockStack-${GLib.uuid_string_random().replace(/-/g, '')}`;
         this._hostId = Gio.bus_own_name(
             Gio.BusType.SESSION, hostName, Gio.BusNameOwnerFlags.NONE,
@@ -457,7 +457,7 @@ export class SysTrayManager {
         this._items.set(key, icon);
         Main.panel.addToStatusArea(`dock-stack-tray-${key}`, icon, 0, 'right');
 
-        // Vigilar que el dueño del bus siga existiendo
+        // Watch that the bus owner still exists
         const watchId = Gio.bus_watch_name(
             Gio.BusType.SESSION, busName, Gio.BusNameWatcherFlags.NONE,
             null,

@@ -1,94 +1,100 @@
 # Dock Stack
 
-Dock inferior para **GNOME Shell 48** (Wayland) con agrupaciones de aplicaciones
-estilo macOS (*stacks*), rejilla de aplicaciones propia (*Launchpad*), barra de
-tareas con apps en ejecución e iconos de bandeja (*systray*) en el panel superior.
+Bottom dock for **GNOME Shell 48–50** (Wayland) with macOS-style application
+groupings (*stacks*), a custom application grid (*Launchpad*), a taskbar with
+running apps, and tray icons (*systray*) in the top panel.
 
-> Extensión personal de *Aplicaciones y Utilitarios — ABAZA*.
+> Personal extension of *Aplicaciones y Utilitarios — ABAZA*.
 
-## Características
+## Features
 
-- **Dock** inferior configurable (tamaño de icono, opacidad, posición, reserva de espacio).
-- **Stacks estilo macOS**: agrupaciones de apps o carpetas que se despliegan en
-  **grilla** o en **abanico** (tira curva), con orden ascendente/descendente.
-- **Orden unificado**: favoritos y stacks se mezclan y **se reordenan arrastrando**,
-  con animación fluida (los iconos se apartan para abrir el hueco).
-- **Apps en ejecución** en el dock, agrupadas por aplicación, con puntos indicadores
-  y miniaturas de ventanas al pasar el ratón.
-- **Rejilla de aplicaciones propia** (*Launchpad*) con categorías, búsqueda,
-  ordenación alfabética y tema claro/oscuro, en sustitución del *overview* de GNOME.
-- **Systray** propio (StatusNotifierItem/AppIndicator) en el panel superior.
-- **Intellihide** y ocultado automático; se oculta en pantalla completa (juegos/vídeo).
-- **Sonidos** configurables de inicio y cierre de sesión.
-- Integración con GNOME: desactiva Dash to Dock, oculta el dash del overview y el
-  botón nativo de aplicaciones mientras está activa.
-- Panel de **preferencias** (General / Stacks / Acerca De).
+- **Configurable bottom dock** (icon size, opacity, position, reserved space).
+- **macOS-style stacks**: groups of apps or folders that expand as a **grid** or
+  a **fan** (curved strip), with ascending/descending order.
+- **Unified order**: favorites and stacks are mixed and **reordered by dragging**,
+  with a fluid animation (icons move aside to open the gap).
+- **Running apps** in the dock, grouped per application, with indicator dots and
+  window thumbnails on hover.
+- **Custom application grid** (*Launchpad*) with categories, search, alphabetical
+  sorting and a light/dark theme, replacing the GNOME *overview*.
+- **Genie effect** when opening/closing the grid (grows/shrinks from the menu button).
+- Own **systray** (StatusNotifierItem/AppIndicator) in the top panel.
+- **Intellihide** and auto-hide; hides in fullscreen (games/video).
+- Configurable **login/logout sounds**.
+- **Multilingual UI**: Spanish, English, Portuguese, French and German (follows
+  the system language, or a manual selector; falls back to English).
+- **Burn My Windows integration**: the dock sets each window's minimize target to
+  its dock icon, so Burn My Windows' *magic lamp* aims at the right icon.
+- GNOME integration: disables Dash to Dock, hides the overview dash and the native
+  applications button while active.
+- **Preferences** panel (General / Stacks / About).
 
-## Captura
+## Screenshot
 
 ![Dock Stack](screenshots/dock-stack.png)
 
-## Requisitos
+## Requirements
 
-- GNOME Shell **48**
-- Sesión **Wayland** (recomendado)
+- GNOME Shell **48–50**
+- **Wayland** session (recommended)
 
-## Instalación
+## Installation
 
-### Desde el paquete (.zip)
+### From the package (.zip)
 
 ```bash
 gnome-extensions install --force dock-stack@felipe.local.shell-extension.zip
 ```
 
-Cierra sesión y vuelve a entrar, luego actívala:
+Log out and back in, then enable it:
 
 ```bash
 gnome-extensions enable dock-stack@felipe.local
 ```
 
-### Desde el código (clonando el repositorio)
+### From source (cloning the repository)
 
 ```bash
 git clone https://github.com/DonWhario/dash-stack.git \
   ~/.local/share/gnome-shell/extensions/dock-stack@felipe.local
 cd ~/.local/share/gnome-shell/extensions/dock-stack@felipe.local
-make schemas          # compila los esquemas de GSettings
+make schemas          # compile the GSettings schemas
 gnome-extensions enable dock-stack@felipe.local
 ```
 
-Cierra sesión y vuelve a entrar para que GNOME Shell la cargue.
+Log out and back in so GNOME Shell loads it.
 
-## Desarrollo
+## Development
 
 ```bash
-make schemas   # compilar esquemas tras editar el .gschema.xml
-make pack      # generar el .zip
-make install   # empaquetar e instalar
+make schemas   # compile schemas after editing the .gschema.xml
+make pack      # build the .zip
+make install   # package and install
 ```
 
-Probar sin cerrar sesión (sesión anidada):
+Test without logging out (nested session):
 
 ```bash
 dbus-run-session -- gnome-shell --nested --wayland
 ```
 
-Diagnóstico en vivo:
+Live diagnostics:
 
 ```bash
 journalctl -f -o cat /usr/bin/gnome-shell
 ```
 
-## Estructura
+## Structure
 
-| Archivo | Descripción |
+| File | Description |
 |---|---|
-| `extension.js` | Lógica principal: dock, stacks, rejilla, intellihide, integración. |
-| `systray.js`   | Host de StatusNotifierItem/AppIndicator para los iconos de bandeja. |
-| `prefs.js`     | Panel de preferencias (Adw). |
-| `stylesheet.css` | Estilos del dock, stacks, rejilla y miniaturas. |
-| `schemas/`     | Esquema de GSettings. |
+| `extension.js`   | Main logic: dock, stacks, grid, intellihide, integration. |
+| `systray.js`     | StatusNotifierItem/AppIndicator host for tray icons. |
+| `prefs.js`       | Preferences panel (Adw). |
+| `translations.js`| Built-in translations (es, en, pt, fr, de). |
+| `stylesheet.css` | Styles for the dock, stacks, grid and thumbnails. |
+| `schemas/`       | GSettings schema. |
 
-## Licencia
+## License
 
 [MIT](LICENSE) © 2026 Felipe Abarca

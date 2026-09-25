@@ -6,20 +6,20 @@ ZIP = $(UUID).shell-extension.zip
 
 all: pack
 
-# Compilar los esquemas de GSettings
+# Compile the GSettings schemas
 schemas: schemas/gschemas.compiled
 schemas/gschemas.compiled: schemas/*.gschema.xml
 	glib-compile-schemas schemas/
 
-# Empaquetar la extensión en un .zip listo para distribuir/instalar
+# Package the extension into a .zip ready to distribute/install
 pack: schemas
 	gnome-extensions pack --extra-source=systray.js --force .
-	@echo "Generado: $(ZIP)"
+	@echo "Generated: $(ZIP)"
 
-# Instalar el .zip en el sistema del usuario
+# Install the .zip into the user's system
 install: pack
 	gnome-extensions install --force $(ZIP)
-	@echo "Instalado. Cierra sesión y vuelve a entrar (Wayland)."
+	@echo "Installed. Log out and back in (Wayland)."
 
 enable:
 	gnome-extensions enable $(UUID)

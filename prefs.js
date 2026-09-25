@@ -1,4 +1,4 @@
-/* Dock Stacks — panel de preferencias (GTK4 / libadwaita) */
+/* Dock Stacks — preferences panel (GTK4 / libadwaita) */
 
 import Adw from 'gi://Adw';
 import Gtk from 'gi://Gtk';
@@ -11,8 +11,8 @@ import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/ex
 
 import {makeTranslator, LANGUAGE_CHOICES} from './translations.js';
 
-// Traductor a nivel de módulo; se (re)configura en fillPreferencesWindow según
-// la clave 'language'. Por defecto identidad (español) hasta que se configure.
+// Module-level translator; (re)configured in fillPreferencesWindow per
+// the 'language' key. Identity (Spanish) until configured.
 let _ = (s) => s;
 
 function uuidv4() {
@@ -40,9 +40,9 @@ export default class DockStacksPreferences extends ExtensionPreferences {
 
         const build = () => {
             _ = makeTranslator(settings);
-            // Quitar las páginas previas (para reconstruir traducidas)
+            // Remove the previous pages (to rebuild them translated)
             for (const p of this._prefPages) {
-                try { window.remove(p); } catch (_e) { /* ya quitada */ }
+                try { window.remove(p); } catch (_e) { /* already removed */ }
             }
             this._prefPages = [];
             this._buildGeneralPage(window, settings);
@@ -51,9 +51,9 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         };
         build();
 
-        // Al cambiar el idioma, reconstruir las páginas para traducir esta
-        // ventana en vivo. Se difiere para no destruir el widget que emitió
-        // el cambio durante su propia señal.
+        // When the language changes, rebuild the pages to translate this
+        // window live. Deferred so we don't destroy the widget that emitted
+        // the change during its own signal.
         const langId = settings.connect('changed::language', () => {
             GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
                 if (this._prefPages)
@@ -67,7 +67,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         });
     }
 
-    // ------------------------------------------------------------- Acerca De
+    // ------------------------------------------------------------- About
     _buildAboutPage(window) {
         const page = new Adw.PreferencesPage({
             title: _('Acerca De'),
@@ -90,7 +90,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             margin_end: 12,
         });
 
-        // Imagen
+        // Image
         const imgPath = '/home/fabarcad/Imágenes/Icon/abaza.jpg';
         if (GLib.file_test(imgPath, GLib.FileTest.EXISTS)) {
             const pic = Gtk.Picture.new_for_filename(imgPath);
@@ -101,7 +101,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             box.append(pic);
         }
 
-        // Líneas de texto
+        // Text lines
         const l1 = new Gtk.Label({
             label: _('Aplicaciones y Utilitarios'),
             css_classes: ['title-2'],
@@ -117,7 +117,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         group.add(box);
     }
 
-    // Reproduce un sonido de prueba (mismo criterio que la extensión)
+    // Plays a test sound (same logic as the extension)
     _playTestSound(path) {
         if (!path) {
             const disp = Gdk.Display.get_default();
@@ -141,7 +141,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
                 Gio.Subprocess.new([full, ...args],
                     Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_SILENCE);
                 break;
-            } catch (_e) { /* probar el siguiente */ }
+            } catch (_e) { /* try the next one */ }
         }
     }
 
@@ -154,14 +154,14 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         window.add(page);
         if (this._prefPages) this._prefPages.push(page);
 
-        // Idioma
+        // Language
         const langGroup = new Adw.PreferencesGroup({title: _('Idioma')});
         page.add(langGroup);
 
         const langModel = new Gtk.StringList();
         const langCodes = [];
         for (const [code, label] of LANGUAGE_CHOICES) {
-            // La opción "auto" se traduce; los nombres de idioma van en su idioma.
+            // The "auto" option is translated; language names stay in their own language.
             langModel.append(code === 'auto' ? _('Automático (según el sistema)') : label);
             langCodes.push(code);
         }
@@ -182,7 +182,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         const group = new Adw.PreferencesGroup({title: _('Apariencia del dock')});
         page.add(group);
 
-        // Tamaño de icono
+        // Icon size
         const iconRow = new Adw.SpinRow({
             title: _('Tamaño de icono'),
             subtitle: _('Píxeles'),
@@ -191,7 +191,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         settings.bind('icon-size', iconRow, 'value', Gio.SettingsBindFlags.DEFAULT);
         group.add(iconRow);
 
-        // Posición
+        // Position
         const posModel = new Gtk.StringList();
         [_('Inferior'), _('Izquierda'), _('Derecha')].forEach(s => posModel.append(s));
         const posKeys = ['bottom', 'left', 'right'];
@@ -205,7 +205,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         });
         group.add(posRow);
 
-        // Opacidad
+        // Opacity
         const opRow = new Adw.SpinRow({
             title: _('Opacidad del fondo (%)'),
             adjustment: new Gtk.Adjustment({lower: 0, upper: 100, step_increment: 5, value: settings.get_int('background-opacity')}),
@@ -229,7 +229,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         settings.bind('intellihide', intelliRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         group.add(intelliRow);
 
-        // Reservar espacio
+        // Reserve space
         const reserveRow = new Adw.SwitchRow({
             title: _('Reservar espacio'),
             subtitle: _('Las ventanas no se superponen al dock (queda siempre visible; anula el auto-ocultado)'),
@@ -237,12 +237,12 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         settings.bind('reserve-space', reserveRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         group.add(reserveRow);
 
-        // Favoritos
+        // Favorites
         const favRow = new Adw.SwitchRow({title: _('Mostrar aplicaciones favoritas')});
         settings.bind('show-favorites', favRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         group.add(favRow);
 
-        // ---- Sonido de inicio ----
+        // ---- Startup sound ----
         const soundGroup = new Adw.PreferencesGroup({
             title: _('Sonido de inicio'),
             description: _('Reproduce un sonido cuando la extensión se carga al iniciar sesión.'),
@@ -261,7 +261,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             settings.set_string('startup-sound-file', soundFileRow.get_text().trim());
         });
 
-        // Botón: elegir archivo de audio
+        // Button: choose audio file
         const pickSoundBtn = new Gtk.Button({icon_name: 'document-open-symbolic', valign: Gtk.Align.CENTER, css_classes: ['flat']});
         pickSoundBtn.set_tooltip_text(_('Elegir archivo de sonido…'));
         pickSoundBtn.connect('clicked', () => {
@@ -275,18 +275,18 @@ export default class DockStacksPreferences extends ExtensionPreferences {
                     const f = dlg.open_finish(res);
                     if (f)
                         soundFileRow.set_text(f.get_path());
-                } catch (_e) { /* cancelado */ }
+                } catch (_e) { /* cancelled */ }
             });
         });
         soundFileRow.add_suffix(pickSoundBtn);
 
-        // Botón: limpiar (usar sonido del sistema)
+        // Button: clear (use system sound)
         const clearSoundBtn = new Gtk.Button({icon_name: 'edit-clear-symbolic', valign: Gtk.Align.CENTER, css_classes: ['flat']});
         clearSoundBtn.set_tooltip_text(_('Usar sonido del sistema'));
         clearSoundBtn.connect('clicked', () => soundFileRow.set_text(''));
         soundFileRow.add_suffix(clearSoundBtn);
 
-        // Botón: probar sonido
+        // Button: test sound
         const testSoundBtn = new Gtk.Button({icon_name: 'media-playback-start-symbolic', valign: Gtk.Align.CENTER, css_classes: ['flat']});
         testSoundBtn.set_tooltip_text(_('Probar sonido'));
         testSoundBtn.connect('clicked', () => this._playTestSound(soundFileRow.get_text().trim()));
@@ -294,7 +294,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
 
         soundGroup.add(soundFileRow);
 
-        // ---- Sonido al cerrar sesión ----
+        // ---- Logout sound ----
         const shutOnRow = new Adw.SwitchRow({
             title: _('Reproducir sonido al cerrar sesión'),
             subtitle: _('Al salir el audio se cierra rápido; puede no sonar siempre'),
@@ -320,7 +320,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
                     const f = dlg.open_finish(res);
                     if (f)
                         shutFileRow.set_text(f.get_path());
-                } catch (_e) { /* cancelado */ }
+                } catch (_e) { /* cancelled */ }
             });
         });
         shutFileRow.add_suffix(pickShutBtn);
@@ -334,7 +334,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         shutFileRow.add_suffix(testShutBtn);
         soundGroup.add(shutFileRow);
 
-        // ---- Apps en ejecución (taskbar) ----
+        // ---- Running apps (taskbar) ----
         const runGroup = new Adw.PreferencesGroup({
             title: _('Aplicaciones en ejecución'),
             description: _('Muestra las apps abiertas en el dock, agrupadas por aplicación.'),
@@ -362,7 +362,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         settings.bind('window-previews', previewRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         runGroup.add(previewRow);
 
-        // ---- Botón de menú de aplicaciones ----
+        // ---- Applications menu button ----
         const appsGroup = new Adw.PreferencesGroup({
             title: _('Botón de aplicaciones'),
             description: _('Un botón que abre la cuadrícula de aplicaciones (estilo Launchpad).'),
@@ -393,7 +393,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         settings.bind('custom-app-grid', gridRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         appsGroup.add(gridRow);
 
-        // Efecto genie al abrir/cerrar la rejilla
+        // Genie effect on grid open/close
         const genieRow = new Adw.SwitchRow({
             title: _('Efecto genie al abrir/cerrar'),
             subtitle: _('La rejilla crece o se encoge desde el botón de menú (estilo genio de macOS)'),
@@ -401,7 +401,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         settings.bind('appgrid-genie', genieRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         appsGroup.add(genieRow);
 
-        // Tema de la rejilla (claro/oscuro)
+        // Grid theme (light/dark)
         const themeModel = new Gtk.StringList();
         [_('Oscuro'), _('Claro')].forEach(s => themeModel.append(s));
         const themeKeys = ['dark', 'light'];
@@ -415,7 +415,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         });
         appsGroup.add(themeRow);
 
-        // Opacidad de los marcos interiores de la rejilla
+        // Opacity of the grid inner frames
         const gridOpRow = new Adw.SpinRow({
             title: _('Opacidad de la rejilla (%)'),
             subtitle: _('Transparencia de los marcos interiores (categorías y apps)'),
@@ -424,14 +424,14 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         settings.bind('appgrid-opacity', gridOpRow, 'value', Gio.SettingsBindFlags.DEFAULT);
         appsGroup.add(gridOpRow);
 
-        // Icono personalizado (nombre de icono o ruta de archivo)
+        // Custom icon (icon name or file path)
         const iconEntryRow = new Adw.EntryRow({title: _('Icono (nombre o ruta)')});
         iconEntryRow.set_text(settings.get_string('apps-button-icon'));
         iconEntryRow.connect('changed', () => {
             settings.set_string('apps-button-icon', iconEntryRow.get_text().trim());
         });
 
-        // Vista previa del icono actual
+        // Preview of the current icon
         const preview = new Gtk.Image({pixel_size: 24, valign: Gtk.Align.CENTER});
         const refreshPreview = () => {
             try {
@@ -445,7 +445,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         settings.connect('changed::apps-button-icon', refreshPreview);
         iconEntryRow.add_prefix(preview);
 
-        // Botón para elegir un archivo de imagen
+        // Button to choose an image file
         const pickIconBtn = new Gtk.Button({icon_name: 'document-open-symbolic', valign: Gtk.Align.CENTER, css_classes: ['flat']});
         pickIconBtn.set_tooltip_text(_('Elegir archivo de imagen…'));
         pickIconBtn.connect('clicked', () => {
@@ -462,12 +462,12 @@ export default class DockStacksPreferences extends ExtensionPreferences {
                         settings.set_string('apps-button-icon', path);
                         iconEntryRow.set_text(path);
                     }
-                } catch (_e) { /* cancelado */ }
+                } catch (_e) { /* cancelled */ }
             });
         });
         iconEntryRow.add_suffix(pickIconBtn);
 
-        // Botón restablecer icono por defecto
+        // Button to reset the default icon
         const resetIconBtn = new Gtk.Button({icon_name: 'edit-undo-symbolic', valign: Gtk.Align.CENTER, css_classes: ['flat']});
         resetIconBtn.set_tooltip_text(_('Restablecer icono por defecto'));
         resetIconBtn.connect('clicked', () => {
@@ -478,7 +478,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
 
         appsGroup.add(iconEntryRow);
 
-        // ---- Integración con GNOME ----
+        // ---- GNOME integration ----
         const gnomeGroup = new Adw.PreferencesGroup({
             title: _('Integración con GNOME'),
             description: _('Evita conflictos con el dock/menú nativo mientras Dock Stack está activo.'),
@@ -513,7 +513,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         settings.bind('enable-appindicator', aiRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         gnomeGroup.add(aiRow);
 
-        // ---- Efectos de ventana (integración con Burn My Windows) ----
+        // ---- Window effects (Burn My Windows integration) ----
         const weGroup = new Adw.PreferencesGroup({
             title: _('Efectos de ventana'),
             description: _('Con Burn My Windows instalado, las ventanas se abren, cierran y minimizan con efectos; Dock Stack hace que el minimizado apunte al icono del dock.'),
@@ -542,11 +542,11 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         bmwRow.add_suffix(bmwLink);
         weGroup.add(bmwRow);
 
-        // Grupo stacks
+        // Stacks group
         const sgroup = new Adw.PreferencesGroup({title: _('Despliegue de stacks')});
         page.add(sgroup);
 
-        // Estilo de despliegue: grilla o abanico
+        // Deployment style: grid or fan
         const styleModel = new Gtk.StringList();
         [_('Grilla'), _('Abanico (estilo macOS)')].forEach(s => styleModel.append(s));
         const styleKeys = ['grid', 'fan'];
@@ -561,7 +561,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         });
         sgroup.add(styleRow);
 
-        // Curvatura del abanico
+        // Fan curvature
         const curveRow = new Adw.SpinRow({
             title: _('Curvatura del abanico (px)'),
             subtitle: _('0 = tira recta vertical; más alto = más curva'),
@@ -570,7 +570,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         settings.bind('fan-curve', curveRow, 'value', Gio.SettingsBindFlags.DEFAULT);
         sgroup.add(curveRow);
 
-        // Orden de los elementos del stack (ascendente / descendente)
+        // Stack item order (ascending / descending)
         const sortModel = new Gtk.StringList();
         [_('Ascendente (A→Z)'), _('Descendente (Z→A)')].forEach(s => sortModel.append(s));
         const sortKeys = ['asc', 'desc'];
@@ -585,7 +585,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         });
         sgroup.add(sortRow);
 
-        // Mostrar u ocultar el icono de cada elemento del stack
+        // Show or hide the icon of each stack item
         const showIconRow = new Adw.SwitchRow({
             title: _('Mostrar icono en los stacks'),
             subtitle: _('Muestra el icono de cada app/archivo en el stack desplegado'),
@@ -593,7 +593,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         settings.bind('stack-show-icon', showIconRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         sgroup.add(showIconRow);
 
-        // Posición del icono respecto al texto (izquierda / derecha) — modo abanico
+        // Icon position relative to the text (left / right) — fan mode
         const iconPosModel = new Gtk.StringList();
         [_('Izquierda'), _('Derecha')].forEach(s => iconPosModel.append(s));
         const iconPosKeys = ['left', 'right'];
@@ -641,7 +641,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         this._window = window;
         this._settings = settings;
 
-        // Botones de creación
+        // Creation buttons
         const actionGroup = new Adw.PreferencesGroup();
         page.add(actionGroup);
 
@@ -667,7 +667,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
     }
 
     _refreshStackList() {
-        // Quitar filas previas
+        // Remove previous rows
         if (this._rows) {
             for (const r of this._rows)
                 this._listGroup.remove(r);
@@ -688,7 +688,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
                 : `Grupo de apps · ${(stack.apps || []).length} app(s)`;
             const row = new Adw.ActionRow({title: stack.name, subtitle});
 
-            // Vista previa del icono del stack
+            // Preview of the stack icon
             const prev = new Gtk.Image({pixel_size: 24, valign: Gtk.Align.CENTER});
             try {
                 if (stack.icon)
@@ -700,22 +700,22 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             }
             row.add_prefix(prev);
 
-            // Editar
+            // Edit
             const editBtn = new Gtk.Button({icon_name: 'document-edit-symbolic', valign: Gtk.Align.CENTER, css_classes: ['flat']});
             editBtn.connect('clicked', () => this._openStackEditor(index));
             row.add_suffix(editBtn);
 
-            // Subir
+            // Move up
             const upBtn = new Gtk.Button({icon_name: 'go-up-symbolic', valign: Gtk.Align.CENTER, css_classes: ['flat'], sensitive: index > 0});
             upBtn.connect('clicked', () => this._moveStack(index, -1));
             row.add_suffix(upBtn);
 
-            // Bajar
+            // Move down
             const downBtn = new Gtk.Button({icon_name: 'go-down-symbolic', valign: Gtk.Align.CENTER, css_classes: ['flat'], sensitive: index < stacks.length - 1});
             downBtn.connect('clicked', () => this._moveStack(index, 1));
             row.add_suffix(downBtn);
 
-            // Borrar
+            // Delete
             const delBtn = new Gtk.Button({icon_name: 'user-trash-symbolic', valign: Gtk.Align.CENTER, css_classes: ['flat', 'error']});
             delBtn.connect('clicked', () => this._deleteStack(index));
             row.add_suffix(delBtn);
@@ -750,7 +750,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             try {
                 folder = dlg.select_folder_finish(res);
             } catch (_e) {
-                return; // cancelado
+                return; // cancelled
             }
             if (!folder)
                 return;
@@ -799,12 +799,12 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         const group = new Adw.PreferencesGroup();
         page.add(group);
 
-        // Nombre
+        // Name
         const nameRow = new Adw.EntryRow({title: _('Nombre')});
         nameRow.set_text(stack.name || '');
         group.add(nameRow);
 
-        // Icono en el dock (personalizable)
+        // Dock icon (customizable)
         const iconRow = new Adw.EntryRow({title: _('Icono en el dock (nombre o ruta; vacío = automático)')});
         iconRow.set_text(stack.icon || '');
         const preview = new Gtk.Image({pixel_size: 24, valign: Gtk.Align.CENTER});
@@ -835,7 +835,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
                     const f = dlg.open_finish(res);
                     if (f)
                         iconRow.set_text(f.get_path());
-                } catch (_e) { /* cancelado */ }
+                } catch (_e) { /* cancelled */ }
             });
         });
         iconRow.add_suffix(pickBtn);
@@ -845,7 +845,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         iconRow.add_suffix(clearBtn);
         group.add(iconRow);
 
-        // Estilo de despliegue por stack
+        // Per-stack deployment style
         const styleModel = new Gtk.StringList();
         [_('Predeterminado'), _('Grilla'), _('Abanico')].forEach(s => styleModel.append(s));
         const styleKeys = ['', 'grid', 'fan'];
@@ -856,7 +856,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         });
         group.add(styleRow);
 
-        // Contenido según tipo
+        // Content by type
         const contentGroup = new Adw.PreferencesGroup({
             title: stack.type === 'folder' ? _('Carpeta') : _('Aplicaciones'),
         });
@@ -925,7 +925,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         win.present();
     }
 
-    // ------------------------------------------------------------- helpers UI
+    // ------------------------------------------------------------- UI helpers
     _promptText(title, initial, callback) {
         const dialog = new Adw.MessageDialog({
             transient_for: this._window,

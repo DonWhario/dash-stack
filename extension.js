@@ -1,5 +1,5 @@
 /* Dock Stacks — GNOME Shell 48
- * Dock inferior con agrupaciones de aplicaciones estilo macOS (stacks).
+ * Bottom dock with macOS-style application groupings (stacks).
  */
 
 import GObject from 'gi://GObject';
@@ -19,8 +19,8 @@ import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import {SysTrayManager} from './systray.js';
 import {makeTranslator} from './translations.js';
 
-// Traductor a nivel de módulo; se (re)configura en enable() y al cambiar la
-// clave 'language'. Por defecto identidad (español) hasta configurarse.
+// Module-level translator; (re)configured in enable() and when the
+// 'language' key changes. Identity (Spanish) until configured.
 let _ = (s) => s;
 
 const APP_SYSTEM = () => Shell.AppSystem.get_default();
@@ -55,7 +55,7 @@ class DockItemButton extends St.Button {
         this._box = new St.BoxLayout({orientation: Clutter.Orientation.VERTICAL, x_align: Clutter.ActorAlign.CENTER});
         if (iconActor)
             this._box.add_child(iconActor);
-        // Fila de puntos indicadores de ejecución (debajo del icono)
+        // Row of running-indicator dots (below the icon)
         this._indicator = new St.BoxLayout({
             style_class: 'dock-running-indicator',
             x_align: Clutter.ActorAlign.CENTER,
@@ -63,7 +63,7 @@ class DockItemButton extends St.Button {
         this._box.add_child(this._indicator);
         this.set_child(this._box);
         if (label)
-            this.set_tooltip_text?.(label); // no-op si no existe; usamos hover propio
+            this.set_tooltip_text?.(label); // no-op if missing; we use our own hover
         this._labelText = label;
     }
 
@@ -71,7 +71,7 @@ class DockItemButton extends St.Button {
         this._indicator.destroy_all_children();
         if (!windowCount || windowCount <= 0)
             return;
-        const dots = Math.min(windowCount, 3); // agrupado: 1..3 puntos
+        const dots = Math.min(windowCount, 3); // grouped: 1..3 dots
         for (let i = 0; i < dots; i++) {
             const dot = new St.Widget({style_class: 'dock-running-dot'});
             if (focused)
@@ -153,7 +153,7 @@ export default class DockStacksExtension extends Extension {
         this._applySysTray();
         this._playStartupSound();
 
-        // Reaccionar a cambios de configuración
+        // React to settings changes
         this._settingsChangedId = this._settings.connect('changed', (_s, key) => {
             if (key === 'stacks' || key === 'show-favorites' || key === 'icon-size' ||
                 key === 'show-apps-button' || key === 'apps-button-icon' ||
@@ -162,7 +162,7 @@ export default class DockStacksExtension extends Extension {
                 key === 'dock-order')
                 this._rebuildItems();
             else if (key === 'language') {
-                // Reconstruir el traductor y refrescar textos (dock y rejilla).
+                // Rebuild the translator and refresh texts (dock and grid).
                 _ = makeTranslator(this._settings);
                 this._closeAppGrid();
                 this._rebuildItems();
@@ -180,18 +180,18 @@ export default class DockStacksExtension extends Extension {
                 this._applySysTray();
         });
 
-        // Reaccionar a cambios de favoritos / apps instaladas
+        // React to favorites / installed-apps changes
         this._favChangedId = AppFavorites.getAppFavorites().connect('changed', () => this._rebuildItems());
 
-        // Reaccionar a apps que arrancan / se cierran y al foco
+        // React to apps starting / closing and to focus
         this._appStateId = Shell.AppSystem.get_default().connect(
             'app-state-changed', () => this._queueRebuild());
         this._focusAppId = Shell.WindowTracker.get_default().connect(
             'notify::focus-app', () => this._queueRebuild());
 
-        // Recalcular visibilidad (intellihide) ante cambios de ventanas.
-        // Con debounce: al maximizar se disparan muchos 'size-changed' y el
-        // solape "parpadea"; agrupándolos evitamos alternancias que dejan el dock a medias.
+        // Recompute visibility (intellihide) on window changes.
+        // Debounced: maximizing fires many 'size-changed' events and the
+        // overlap "flickers"; grouping them avoids leaving the dock half-shown.
         this._visSignals = [];
         const watchVis = (obj, sig) =>
             this._visSignals.push([obj, obj.connect(sig, () => this._scheduleVisibility())]);
@@ -206,14 +206,14 @@ export default class DockStacksExtension extends Extension {
         watchVis(Main.overview, 'showing');
         watchVis(Main.overview, 'hidden');
 
-        // Reconstruir el dock cuando aparece una ventana nueva
-        // (para actualizar la sección de apps en ejecución). El cierre de apps
-        // lo cubre 'app-state-changed'. Evitamos 'map'/'destroy' por ventana
-        // para no provocar avalanchas de reconstrucción.
+        // Rebuild the dock when a new window appears
+        // (to update the running-apps section). App closing is
+        // covered by 'app-state-changed'. We avoid per-window 'map'/'destroy'
+        // to prevent rebuild storms.
         this._visSignals.push([global.display,
             global.display.connect('window-created', () => this._queueRebuild())]);
 
-        // Reposicionar en cambios de monitor
+        // Reposition on monitor changes
         this._monitorsId = Main.layoutManager.connect('monitors-changed', () => this._relayout());
     }
 
@@ -249,13 +249,13 @@ export default class DockStacksExtension extends Extension {
         this._winSignals.push([app, id]);
     }
 
-    // Apps en ejecución derivadas de las ventanas reales (más fiable que
-    // AppSystem.get_running(), que puede omitir apps cuyo .desktop no casa).
+    // Running apps derived from real windows (more reliable than
+    // AppSystem.get_running(), which may miss apps whose .desktop doesn't match).
     _getRunningApps() {
         const tracker = Shell.WindowTracker.get_default();
         const seen = new Set();
         const apps = [];
-        // Tipos de ventana que representan aplicaciones (no diálogos/menús/etc.)
+        // Window types that represent applications (not dialogs/menus/etc.)
         const okTypes = [
             Meta.WindowType.NORMAL,
             Meta.WindowType.DIALOG,
@@ -265,8 +265,8 @@ export default class DockStacksExtension extends Extension {
             const win = actor.get_meta_window ? actor.get_meta_window() : actor.meta_window;
             if (!win)
                 continue;
-            // Incluir todas las ventanas de aplicación (aunque marquen skip-taskbar,
-            // como algunos juegos p. ej. Minecraft); excluir solo tipos auxiliares.
+            // Include all application windows (even skip-taskbar ones,
+            // like some games e.g. Minecraft); exclude only auxiliary types.
             if (!okTypes.includes(win.get_window_type()))
                 continue;
             const app = tracker.get_window_app(win);
@@ -278,7 +278,7 @@ export default class DockStacksExtension extends Extension {
             seen.add(id);
             apps.push(app);
         }
-        // Incluir también lo que AppSystem considere en ejecución, por si acaso
+        // Also include what AppSystem considers running, just in case
         for (const app of Shell.AppSystem.get_default().get_running()) {
             const id = app.get_id();
             if (!seen.has(id)) {
@@ -290,7 +290,7 @@ export default class DockStacksExtension extends Extension {
         return apps;
     }
 
-    // Activar / ciclar ventanas de una app en ejecución
+    // Activate / cycle windows of a running app
     _activateApp(app) {
         this._closeAppGrid();
         if (Main.overview.visible)
@@ -302,7 +302,7 @@ export default class DockStacksExtension extends Extension {
         }
         const focusApp = Shell.WindowTracker.get_default().focus_app;
         if (focusApp === app && windows.length > 1) {
-            // Ciclar a la siguiente ventana
+            // Cycle to the next window
             const active = global.display.get_focus_window();
             let idx = windows.indexOf(active);
             const next = windows[(idx + 1) % windows.length];
@@ -385,7 +385,7 @@ export default class DockStacksExtension extends Extension {
         this._settings = null;
     }
 
-    // Host de bandeja (systray) en el panel superior
+    // Tray (systray) host in the top panel
     _applySysTray() {
         const on = this._settings.get_boolean('systray');
         if (on && !this._sysTray) {
@@ -402,16 +402,16 @@ export default class DockStacksExtension extends Extension {
         }
     }
 
-    // Sonido al cargar la extensión (configurable)
+    // Sound when the extension loads (configurable)
     _playStartupSound() {
         if (!this._settings.get_boolean('startup-sound'))
             return;
         const path = this._settings.get_string('startup-sound-file');
         if (path) {
-            // Un reproductor externo soporta MP3/OGG/WAV/FLAC…
+            // An external player supports MP3/OGG/WAV/FLAC…
             if (this._playFileExternal(path))
                 return;
-            // Respaldo: reproductor de GNOME (solo OGG/WAV/FLAC)
+            // Fallback: GNOME player (OGG/WAV/FLAC only)
             try {
                 global.display.get_sound_player().play_from_file(
                     Gio.File.new_for_path(path), 'Dock Stack', null);
@@ -426,16 +426,16 @@ export default class DockStacksExtension extends Extension {
         }
     }
 
-    // Sonido al cerrar la sesión (best-effort: el audio se cierra al salir)
+    // Sound on logout (best-effort: audio is torn down on exit)
     _playShutdownSound() {
         if (!this._settings.get_boolean('shutdown-sound'))
             return;
-        // Omitir cuando solo se bloquea la pantalla (no es cierre de sesión)
+        // Skip when the screen only locks (not a logout)
         if (Main.sessionMode.currentMode === 'unlock-dialog')
             return;
         const path = this._settings.get_string('shutdown-sound-file');
         if (path) {
-            // Desacoplado (setsid) para sobrevivir al cierre del shell un instante
+            // Detached (setsid) to briefly survive the shell shutting down
             this._playFileExternal(path, true);
         } else {
             try {
@@ -445,8 +445,8 @@ export default class DockStacksExtension extends Extension {
         }
     }
 
-    // Reproduce un archivo de audio con el primer reproductor disponible.
-    // detached=true lo lanza en una sesión nueva (setsid) para que no muera con el shell.
+    // Plays an audio file with the first available player.
+    // detached=true launches it in a new session (setsid) so it doesn't die with the shell.
     _playFileExternal(path, detached = false) {
         const candidates = [
             ['pw-play', [path]],
@@ -463,7 +463,7 @@ export default class DockStacksExtension extends Extension {
                 continue;
             try {
                 if (detached) {
-                    // Lanzar en sesión nueva para que sobreviva al cierre del shell
+                    // Launch in a new session so it survives the shell shutdown
                     const argv = setsid ? [setsid, full, ...args] : [full, ...args];
                     GLib.spawn_async(null, argv, null,
                         GLib.SpawnFlags.SEARCH_PATH | GLib.SpawnFlags.STDOUT_TO_DEV_NULL |
@@ -481,9 +481,9 @@ export default class DockStacksExtension extends Extension {
         return false;
     }
 
-    // -------------------------------------------------- integración con GNOME
+    // -------------------------------------------------- GNOME integration
     _applyGnomeIntegration() {
-        // 1) Desactivar Dash to Dock si procede
+        // 1) Disable Dash to Dock if applicable
         const wantDisableDTD = this._settings.get_boolean('disable-dash-to-dock');
         const DTD = 'dash-to-dock@micxgx.gmail.com';
         const em = Main.extensionManager;
@@ -491,7 +491,7 @@ export default class DockStacksExtension extends Extension {
             const ext = em?.lookup(DTD);
             if (ext && ext.state === 1 /* ACTIVE */ && !this._disabledDTD) {
                 this._disabledDTD = true;
-                // Diferir para evitar reentrada durante enable()
+                // Defer to avoid re-entrancy during enable()
                 this._dtdTimeout = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
                     this._dtdTimeout = 0;
                     try {
@@ -509,7 +509,7 @@ export default class DockStacksExtension extends Extension {
             } catch (_e) { /* ignore */ }
         }
 
-        // 2) Ocultar / mostrar el dash nativo de Actividades (incluye botón de apps)
+        // 2) Hide / show the native Activities dash (includes the apps button)
         const wantHideDash = this._settings.get_boolean('hide-overview-dash');
         const dash = Main.overview?.dash;
         if (wantHideDash) {
@@ -529,7 +529,7 @@ export default class DockStacksExtension extends Extension {
             this._revertDash();
         }
 
-        // 3) Mantener activa la extensión AppIndicator (systray en el top bar)
+        // 3) Keep the AppIndicator extension active (systray in the top bar)
         if (this._settings.get_boolean('enable-appindicator')) {
             const AI = 'appindicatorsupport@rgcjonas.gmail.com';
             const ext = em?.lookup(AI);
@@ -557,7 +557,7 @@ export default class DockStacksExtension extends Extension {
         }
         const dash = Main.overview?.dash;
         if (dash) {
-            dash.set_width(-1); // volver a ancho automático
+            dash.set_width(-1); // back to automatic width
             dash.show();
         }
     }
@@ -571,7 +571,7 @@ export default class DockStacksExtension extends Extension {
             GLib.source_remove(this._aiTimeout);
             this._aiTimeout = 0;
         }
-        // Rehabilitar Dash to Dock si nosotros lo desactivamos
+        // Re-enable Dash to Dock if we disabled it
         if (this._disabledDTD) {
             this._disabledDTD = false;
             try {
@@ -602,13 +602,13 @@ export default class DockStacksExtension extends Extension {
             trackFullscreen: true,
         });
 
-        // El dock actúa como objetivo de arrastre para reordenar
+        // The dock acts as the drop target for reordering
         this._dock._delegate = this;
 
         this._dock.connect('notify::width', () => this._relayout());
         this._dock.connect('notify::height', () => this._relayout());
 
-        // autohide: mostrar al entrar, ocultar al salir
+        // autohide: show on enter, hide on leave
         this._dock.connect('enter-event', () => this._onHover(true));
         this._dock.connect('leave-event', () => this._onHover(false));
 
@@ -630,12 +630,12 @@ export default class DockStacksExtension extends Extension {
         this._clearWinSignals();
         this._destroyPreview();
         this._hideTooltip();
-        // Desactivar reactividad antes de destruir para que no se disparen
-        // eventos enter/leave sobre actores en proceso de destrucción.
+        // Disable reactivity before destroying so that enter/leave events
+        // don't fire on actors being destroyed.
         for (const child of this._dock.get_children())
             child.reactive = false;
         this._dock.destroy_all_children();
-        this._appButtonList = [];   // {app, btn} para geometría de minimizado
+        this._appButtonList = [];   // {app, btn} for minimize geometry
         const iconSize = this._settings.get_int('icon-size');
 
         const showRunning = this._settings.get_boolean('show-running');
@@ -644,7 +644,7 @@ export default class DockStacksExtension extends Extension {
         const focusApp = Shell.WindowTracker.get_default().focus_app;
         const runningApps = this._getRunningApps();
 
-        // Botón de menú de aplicaciones (al inicio)
+        // Applications menu button (at the start)
         const showApps = this._settings.get_boolean('show-apps-button');
         const appsAtStart = this._settings.get_string('apps-button-position') === 'start';
         if (showApps && appsAtStart) {
@@ -653,8 +653,8 @@ export default class DockStacksExtension extends Extension {
             this._dock.add_child(sep);
         }
 
-        // ---- Elementos anclados: favoritos y stacks en un ORDEN UNIFICADO ----
-        // Se pueden reordenar y MEZCLAR libremente entre sí (sin separación).
+        // ---- Pinned items: favorites and stacks in a UNIFIED ORDER ----
+        // They can be reordered and MIXED freely (no separation).
         const favIds = new Set();
         const pinned = this._computePinnedEntries();
         this._pinnedTokens = pinned.map(e => e.token);
@@ -702,7 +702,7 @@ export default class DockStacksExtension extends Extension {
             }
         });
 
-        // Apps en ejecución NO favoritas (agrupadas: un icono por app)
+        // Running NON-favorite apps (grouped: one icon per app)
         if (showRunning) {
             const others = runningApps.filter(a => !favIds.has(a.get_id()));
             if (others.length && this._dock.get_n_children() > 0) {
@@ -731,7 +731,7 @@ export default class DockStacksExtension extends Extension {
             }
         }
 
-        // Botón de menú de aplicaciones (al final)
+        // Applications menu button (at the end)
         if (showApps && !appsAtStart) {
             if (this._dock.get_n_children() > 0) {
                 const sep = new St.Widget({style_class: 'dock-separator'});
@@ -755,7 +755,7 @@ export default class DockStacksExtension extends Extension {
         const icon = new St.Icon({gicon, icon_size: iconSize});
         const btn = new DockItemButton(icon, _('Aplicaciones'), iconSize);
         btn.add_style_class_name('dock-apps-button');
-        this._appsButtonActor = btn;   // referencia para el efecto genie
+        this._appsButtonActor = btn;   // reference for the genie effect
         this._attachTooltip(btn, _('Aplicaciones'));
         btn.connect('clicked', () => {
             this._closeStack();
@@ -770,7 +770,7 @@ export default class DockStacksExtension extends Extension {
                 Main.overview.showApps();
             }
         });
-        // Clic derecho → menú con opción de configuración
+        // Right click → menu with a settings option
         btn.connect('button-press-event', (_actor, event) => {
             if (event.get_button() === Clutter.BUTTON_SECONDARY) {
                 this._showAppsButtonMenu(btn);
@@ -797,7 +797,7 @@ export default class DockStacksExtension extends Extension {
         });
     }
 
-    // Abre un menú contextual con entradas [{label, callback} | {separator:true}]
+    // Opens a context menu with entries [{label, callback} | {separator:true}]
     _openMenu(sourceActor, entries) {
         this._closeStack();
         if (this._itemMenu) {
@@ -837,7 +837,7 @@ export default class DockStacksExtension extends Extension {
         menu.open();
     }
 
-    // Conecta clic derecho a un actor; buildEntries() se evalúa al abrir
+    // Wires right-click on an actor; buildEntries() is evaluated on open
     _attachContextMenu(btn, buildEntries) {
         btn.connect('button-press-event', (_a, event) => {
             if (event.get_button() === Clutter.BUTTON_SECONDARY) {
@@ -863,7 +863,7 @@ export default class DockStacksExtension extends Extension {
         this._settings.set_string('stacks', JSON.stringify(stacks));
     }
 
-    // ----------------------------------------------- miniaturas de ventanas
+    // ----------------------------------------------- window thumbnails
     _attachWindowPreview(btn, app) {
         btn.connect('enter-event', () => {
             if (this._dragActive)
@@ -911,13 +911,13 @@ export default class DockStacksExtension extends Extension {
         if (this._previewPopup) {
             try {
                 this._previewPopup.destroy();
-            } catch (_e) { /* ya destruido */ }
+            } catch (_e) { /* already destroyed */ }
             this._previewPopup = null;
         }
         this._previewApp = null;
     }
 
-    // ------------------------------------------------------ tooltips (nombre)
+    // ------------------------------------------------------ tooltips (name)
     _attachTooltip(btn, text) {
         if (!text)
             return;
@@ -951,16 +951,16 @@ export default class DockStacksExtension extends Extension {
         if (this._tooltip) {
             try {
                 this._tooltip.destroy();
-            } catch (_e) { /* ya destruido */ }
+            } catch (_e) { /* already destroyed */ }
             this._tooltip = null;
         }
     }
 
     _showTooltip(btn, text) {
         if (!btn || !btn.get_stage())
-            return; // el botón ya no existe
+            return; // the button no longer exists
         if (this._previewPopup)
-            return; // si ya hay miniaturas, no mostramos el tooltip
+            return; // if thumbnails are already shown, skip the tooltip
         this._hideTooltip();
         const tip = new St.Label({style_class: 'dock-tooltip', text});
         Main.layoutManager.uiGroup.add_child(tip);
@@ -1010,7 +1010,7 @@ export default class DockStacksExtension extends Extension {
 
     _showPreview(btn, app) {
         if (!btn || !btn.get_stage())
-            return; // el botón ya no existe
+            return; // the button no longer exists
         if (this._previewApp === app && this._previewPopup)
             return;
         const windows = app.get_windows();
@@ -1100,7 +1100,7 @@ export default class DockStacksExtension extends Extension {
             Main.overview.showApps();
     }
 
-    // ¿La app pertenece a la categoría (por su campo Categories del .desktop)?
+    // Does the app belong to the category (by its .desktop Categories field)?
     _appInCategory(appInfo, catKey) {
         if (catKey === 'all')
             return true;
@@ -1121,7 +1121,7 @@ export default class DockStacksExtension extends Extension {
         return tokens.some(t => list.includes(t));
     }
 
-    // -------------------------------------------- rejilla de apps propia
+    // -------------------------------------------- custom apps grid
     _openAppGrid(srcBtn) {
         this._closeAppGrid();
         this._closeStack();
@@ -1129,8 +1129,8 @@ export default class DockStacksExtension extends Extension {
         this._appGridSrcBtn = srcBtn || this._appsButtonActor || null;
 
         const monitor = Main.layoutManager.primaryMonitor;
-        // Overlay contenedor TRANSPARENTE (el oscurecido va en 'bg' para poder
-        // animarlo independientemente del panel en el efecto genie).
+        // TRANSPARENT container overlay (the dimming lives in 'bg' so it can be
+        // animated independently of the panel in the genie effect).
         const overlay = new St.Widget({
             reactive: true,
             x: monitor.x,
@@ -1149,14 +1149,14 @@ export default class DockStacksExtension extends Extension {
             return Clutter.EVENT_PROPAGATE;
         });
         Main.layoutManager.uiGroup.add_child(overlay);
-        // Registrar ya el overlay para poder cerrarlo siempre (aunque algo falle)
+        // Register the overlay early so it can always be closed (even on error)
         this._appGridOverlay = overlay;
         this._appGridClosing = false;
 
-        // Fondo HERMANO (no ancestro) que oscurece y captura los clics fuera del
-        // panel para cerrar. Es hermano —como en el popup de stacks— en lugar de
-        // absorber el evento en un ancestro del panel, porque eso rompía el
-        // ciclo pulsar→soltar de los St.Button internos (no emitían 'clicked').
+        // SIBLING background (not an ancestor) that dims and catches clicks outside
+        // the panel to close. It is a sibling —like the stacks popup— instead of
+        // absorbing the event in an ancestor of the panel, because that broke the
+        // press→release cycle of the inner St.Buttons (they didn't emit 'clicked').
         const bg = new St.Widget({
             style_class: 'dock-appgrid-overlay',
             reactive: true,
@@ -1177,54 +1177,54 @@ export default class DockStacksExtension extends Extension {
         const ph = Math.min(monitor.height - 140, 820);
         const sidebarW = 265;
         const gap = 16;
-        const CELL_STEP = 136;          // ancho real de cada celda (110 + relleno + separación)
-        const FRAME_EXTRA = 28 + 18;    // relleno del marco + barra de desplazamiento
+        const CELL_STEP = 136;          // real width of each cell (110 + padding + spacing)
+        const FRAME_EXTRA = 28 + 18;    // frame padding + scrollbar
 
-        // Nº de columnas que caben en el ancho disponible (acotado), y el ancho
-        // del marco de apps se ajusta EXACTAMENTE a esas columnas (sin franja vacía).
+        // Number of columns that fit the available width (clamped), and the apps
+        // frame width fits EXACTLY those columns (no empty strip).
         const availGrid = Math.min(monitor.width - 120, 1400) - sidebarW - gap;
         const columns = Math.max(3, Math.min(8,
             Math.floor((availGrid - FRAME_EXTRA) / CELL_STEP)));
         const gridAreaW = columns * CELL_STEP + FRAME_EXTRA;
         const pw = sidebarW + gap + gridAreaW;
 
-        // Contenedor transparente que aloja los dos marcos separados
+        // Transparent container holding the two separate frames
         const panel = new St.BoxLayout({
             style_class: 'dock-appgrid-container',
             orientation: Clutter.Orientation.HORIZONTAL,
             reactive: true,
         });
         panel.set_size(pw, ph);
-        // Centrado: misma distancia a izquierda y derecha
+        // Centered: same distance left and right
         const panelX = Math.round((monitor.width - pw) / 2);
         const panelY = Math.round((monitor.height - ph) / 2);
         panel.set_position(panelX, panelY);
         overlay.add_child(panel);
         this._appGridPanel = panel;
-        // Pivote del efecto genie hacia el centro del botón de menú
+        // Genie-effect pivot toward the center of the menu button
         this._setGeniePivot(panel, this._appGridSrcBtn,
             monitor.x + panelX, monitor.y + panelY, pw, ph);
 
-        // Marcos interiores: blanco (claro) u oscuro, según el selector; opacidad configurable
+        // Inner frames: white (light) or dark, per the selector; configurable opacity
         const opacity = this._settings.get_int('appgrid-opacity') / 100;
-        const theme = this._settings.get_string('appgrid-theme'); // 'light' = blanco, 'dark' = oscuro
+        const theme = this._settings.get_string('appgrid-theme'); // 'light' = white, 'dark' = dark
         const baseRGB = theme === 'light' ? '255, 255, 255' : '28, 28, 30';
         const innerStyle = `background-color: rgba(${baseRGB}, ${opacity.toFixed(2)});`;
         panel.add_style_class_name(theme);
 
-        // --- Marco de categorías (mismo alto que el de apps) ---
+        // --- Categories frame (same height as the apps frame) ---
         const sidebar = new St.BoxLayout({
             style_class: 'dock-appgrid-sidebar',
             orientation: Clutter.Orientation.VERTICAL,
         });
-        sidebar.set_size(sidebarW, ph);          // mismo largo que el marco de apps
+        sidebar.set_size(sidebarW, ph);          // same length as the apps frame
         panel.add_child(sidebar);
 
         const sidebarInner = new St.BoxLayout({
             style_class: 'dock-appgrid-inner',
             orientation: Clutter.Orientation.VERTICAL,
             x_expand: true,
-            y_expand: true,                      // llena todo el alto del marco
+            y_expand: true,                      // fills the whole height of the frame
         });
         sidebarInner.set_style(innerStyle);
         sidebar.add_child(sidebarInner);
@@ -1275,10 +1275,10 @@ export default class DockStacksExtension extends Extension {
             sidebarInner.add_child(catBtn);
         }
 
-        // Espaciador que empuja el botón de configuración al fondo
+        // Spacer that pushes the settings button to the bottom
         sidebarInner.add_child(new St.Widget({y_expand: true}));
 
-        // Botón de configuración (abre las preferencias) con icono personalizado
+        // Settings button (opens preferences) with a custom icon
         const cfgBtn = new St.Button({
             style_class: 'dock-appgrid-cat dock-appgrid-config',
             x_expand: true,
@@ -1289,7 +1289,7 @@ export default class DockStacksExtension extends Extension {
             x_expand: true,
             x_align: Clutter.ActorAlign.FILL,
         });
-        cfgBox.set_style('spacing: 10px;'); // en GNOME 48 'spacing' va por CSS, no en el constructor
+        cfgBox.set_style('spacing: 10px;'); // in GNOME 48 'spacing' is set via CSS, not in the constructor
         let cfgGicon;
         try {
             cfgGicon = Gio.icon_new_for_string('/home/fabarcad/Imágenes/Icon/config_icon_132468.png');
@@ -1311,12 +1311,12 @@ export default class DockStacksExtension extends Extension {
         });
         sidebarInner.add_child(cfgBtn);
 
-        // --- Marco de aplicaciones (exterior + interior translúcido) ---
+        // --- Applications frame (outer + translucent inner) ---
         const right = new St.BoxLayout({
             orientation: Clutter.Orientation.VERTICAL,
             style_class: 'dock-appgrid-apps',
         });
-        right.set_size(gridAreaW, ph);   // tamaño fijo → forma constante
+        right.set_size(gridAreaW, ph);   // fixed size → constant shape
         panel.add_child(right);
 
         const rightInner = new St.BoxLayout({
@@ -1328,7 +1328,7 @@ export default class DockStacksExtension extends Extension {
         rightInner.set_style(innerStyle);
         right.add_child(rightInner);
 
-        // Fila superior: buscador (más corto) + botón de ordenar
+        // Top row: search box (shorter) + sort button
         const topRow = new St.BoxLayout({
             style_class: 'dock-appgrid-toprow',
             orientation: Clutter.Orientation.HORIZONTAL,
@@ -1346,7 +1346,7 @@ export default class DockStacksExtension extends Extension {
         topRow.add_child(search);
         this._appGridSearch = search;
 
-        // Botón de orden alfabético (recuerda la elección entre aperturas)
+        // Alphabetical sort button (remembers the choice across openings)
         this._appGridSortDesc = this._settings.get_boolean('appgrid-sort-desc');
         const sortBtn = new St.Button({
             style_class: 'dock-appgrid-sort',
@@ -1371,7 +1371,7 @@ export default class DockStacksExtension extends Extension {
         topRow.add_child(sortBtn);
 
         const scroll = new St.ScrollView({style_class: 'dock-appgrid-scroll', y_expand: true, x_expand: true});
-        // Sin scroll horizontal (evita que se recorten columnas); vertical automático
+        // No horizontal scroll (avoids clipping columns); vertical automatic
         scroll.set_policy(St.PolicyType.NEVER, St.PolicyType.AUTOMATIC);
         const box = new St.BoxLayout({
             style_class: 'dock-appgrid-box',
@@ -1382,18 +1382,18 @@ export default class DockStacksExtension extends Extension {
         scroll.set_child(box);
         rightInner.add_child(scroll);
 
-        // Datos: todas las apps instaladas visibles
+        // Data: all visible installed apps
         this._allApps = Gio.AppInfo.get_all()
             .filter(a => a.should_show())
             .sort((a, b) => a.get_display_name().localeCompare(b.get_display_name()));
         this._appGridBox = box;
-        // El marco ya se dimensionó para exactamente estas columnas
+        // The frame was already sized for exactly these columns
         this._appGridColumns = columns;
 
         search.clutter_text.connect('text-changed',
             () => this._populateAppGrid(search.get_text()));
         search.clutter_text.connect('activate', () => this._launchFirstApp());
-        // Escape cierra la rejilla (sin modal, el foco está en el buscador)
+        // Escape closes the grid (no modal, focus is in the search box)
         search.clutter_text.connect('key-press-event', (_a, ev) => {
             if (ev.get_key_symbol() === Clutter.KEY_Escape) {
                 this._closeAppGrid();
@@ -1404,20 +1404,20 @@ export default class DockStacksExtension extends Extension {
 
         this._populateAppGrid('');
 
-        // Sin modal: así el dock sigue visible y utilizable con la rejilla abierta.
-        // Elevamos el dock por encima del overlay para que no quede tapado.
+        // No modal: this keeps the dock visible and usable while the grid is open.
+        // We raise the dock above the overlay so it isn't covered.
         const dockParent = this._container ? this._container.get_parent() : null;
         if (dockParent && overlay.get_parent() === dockParent) {
             try {
                 dockParent.set_child_above_sibling(this._container, overlay);
-            } catch (_e) { /* si no comparten padre, se ignora */ }
+            } catch (_e) { /* if they don't share a parent, ignore */ }
         }
         search.grab_key_focus();
 
         overlay.opacity = 255;
         if (this._settings.get_boolean('appgrid-genie')) {
-            // Efecto "genie": el panel crece desde el botón mientras el fondo
-            // se oscurece. El pivote ya apunta al centro del botón.
+            // "Genie" effect: the panel grows from the button while the background
+            // dims. The pivot already points to the center of the button.
             bg.opacity = 0;
             bg.ease({opacity: 255, duration: 200, mode: Clutter.AnimationMode.EASE_OUT_QUAD});
             panel.opacity = 0;
@@ -1433,8 +1433,8 @@ export default class DockStacksExtension extends Extension {
         }
     }
 
-    // Fija el pivote de escalado del panel hacia el centro del botón de menú
-    // (coordenadas de escena). El pivote es normalizado y puede salir de 0..1.
+    // Sets the panel's scaling pivot toward the center of the menu button
+    // (stage coordinates). The pivot is normalized and may fall outside 0..1.
     _setGeniePivot(panel, srcBtn, panelStageX, panelStageY, pw, ph) {
         let cx, cy;
         try {
@@ -1445,7 +1445,7 @@ export default class DockStacksExtension extends Extension {
             } else {
                 const m = Main.layoutManager.primaryMonitor;
                 cx = m.x + m.width / 2;
-                cy = m.y + m.height; // borde inferior (dock abajo por defecto)
+                cy = m.y + m.height; // bottom edge (dock at bottom by default)
             }
             panel.set_pivot_point((cx - panelStageX) / pw, (cy - panelStageY) / ph);
         } catch (_e) {
@@ -1463,7 +1463,7 @@ export default class DockStacksExtension extends Extension {
         const apps = this._allApps.filter(a =>
             this._appInCategory(a, cat) &&
             (!q || a.get_display_name().toLowerCase().includes(q)));
-        // _allApps ya está en orden ascendente; si se pide descendente, invertir
+        // _allApps is already ascending; if descending is requested, reverse it
         if (this._appGridSortDesc)
             apps.reverse();
         this._appGridFiltered = apps;
@@ -1564,7 +1564,7 @@ export default class DockStacksExtension extends Extension {
 
         this._appGridOverlay.add_child(menu);
 
-        // Posición relativa al overlay (situado en el origen del monitor)
+        // Position relative to the overlay (placed at the monitor origin)
         let mx = stageX - monitor.x;
         let my = stageY - monitor.y;
         const [, mw] = menu.get_preferred_width(-1);
@@ -1595,7 +1595,7 @@ export default class DockStacksExtension extends Extension {
         const finish = () => {
             try {
                 overlay.destroy();
-            } catch (_e) { /* ya destruido */ }
+            } catch (_e) { /* already destroyed */ }
             if (this._appGridOverlay === overlay)
                 this._appGridOverlay = null;
             this._appGridBox = null;
@@ -1609,8 +1609,8 @@ export default class DockStacksExtension extends Extension {
 
         if (animate && this._settings.get_boolean('appgrid-genie') &&
             panel && panel.get_stage() && !this._appGridClosing) {
-            // Efecto genie inverso: el panel se encoge hacia el botón y el fondo
-            // se aclara; al terminar se destruye el overlay.
+            // Reverse genie effect: the panel shrinks toward the button and the
+            // background clears; the overlay is destroyed when finished.
             this._appGridClosing = true;
             if (bg)
                 bg.ease({opacity: 0, duration: 200, mode: Clutter.AnimationMode.EASE_IN_QUAD});
@@ -1621,14 +1621,14 @@ export default class DockStacksExtension extends Extension {
                 onComplete: finish,
             });
         } else {
-            // Cierre inmediato: cancela cualquier animación en curso y limpia ya.
+            // Immediate close: cancels any ongoing animation and cleans up now.
             if (panel)
                 panel.remove_all_transitions();
             finish();
         }
     }
 
-    // -------------------------------------------------- arrastrar para reordenar
+    // -------------------------------------------------- drag to reorder
     _makeReorderable(btn, group, index, meta) {
         btn._delegate = Object.assign({reorderGroup: group, reorderIndex: index, btn}, meta);
         const draggable = DND.makeDraggable(btn, {dragActorOpacity: 200});
@@ -1661,7 +1661,7 @@ export default class DockStacksExtension extends Extension {
         }
     }
 
-    // Objetivo de "drop": el dock (this._dock._delegate = this)
+    // Drop target: the dock (this._dock._delegate = this)
     handleDragOver(source, _actor, x, y, _time) {
         if (!source || source.reorderGroup === undefined)
             return DND.DragMotionResult.NO_DROP;
@@ -1673,11 +1673,11 @@ export default class DockStacksExtension extends Extension {
         return DND.DragMotionResult.MOVE_DROP;
     }
 
-    // ---- animación fluida: los iconos se apartan para abrir el hueco ----
-    // NOTA: DND usa el propio botón como actor arrastrado y lo SACA del dock,
-    // moviéndolo con el puntero. Por eso NUNCA trasladamos el actor fuente
-    // (se sumaría a la posición del puntero) y capturamos la geometría de los
-    // iconos restantes de forma perezosa, cuando el dock ya se ha reajustado.
+    // ---- fluid animation: icons move aside to open the gap ----
+    // NOTE: DND uses the button itself as the drag actor and REMOVES it from the dock,
+    // moving it with the pointer. That's why we NEVER translate the source actor
+    // (it would add to the pointer position) and we capture the geometry of the
+    // remaining icons lazily, once the dock has already re-laid out.
     _beginLiveReorder(sourceActor) {
         this._reorderCtx = {
             source: sourceActor,
@@ -1691,7 +1691,7 @@ export default class DockStacksExtension extends Extension {
         };
     }
 
-    // Captura los iconos restantes (sin la fuente) y el "paso" de un hueco.
+    // Captures the remaining icons (without the source) and the gap "step".
     _ensureReorderCtxReady(source) {
         const ctx = this._reorderCtx;
         if (!ctx || ctx.ready)
@@ -1701,7 +1701,7 @@ export default class DockStacksExtension extends Extension {
             c => c !== ctx.source && c._delegate &&
                  c._delegate.reorderGroup === source.reorderGroup);
         if (actors.length === 0)
-            return; // aún no reajustado; reintentar en el próximo movimiento
+            return; // not re-laid out yet; retry on the next movement
         const homes = actors.map(a => {
             const b = a.get_allocation_box();
             return vertical ? b.y1 : b.x1;
@@ -1727,7 +1727,7 @@ export default class DockStacksExtension extends Extension {
         if (d === ctx.lastDrop)
             return;
         ctx.lastDrop = d;
-        // Los iconos con índice >= d se desplazan un "paso" para abrir el hueco.
+        // Icons with index >= d shift by one "step" to open the gap.
         for (let j = 0; j < m; j++) {
             const actor = ctx.actors[j];
             if (!actor.get_stage())
@@ -1761,19 +1761,19 @@ export default class DockStacksExtension extends Extension {
             return false;
         const newIndex = this._computeGroupDropIndex(source, x, y);
         const changed = this._performReorder(source, newIndex);
-        // En un drop con éxito, 'drag-end' no llegará (el actor se destruye y
-        // se desconectan los handlers), así que limpiamos el estado aquí.
+        // On a successful drop, 'drag-end' won't arrive (the actor is destroyed and
+        // the handlers get disconnected), so we clean up the state here.
         this._finishDrag();
-        // DND saca el actor original del dock al arrastrarlo. Si NO cambia el
-        // orden (misma posición), no hay ajuste de settings que reconstruya el
-        // dock, así que el icono "desaparecería": forzamos la reconstrucción.
+        // DND removes the original actor from the dock while dragging. If the order
+        // does NOT change (same position), no settings update rebuilds the dock,
+        // so the icon would "disappear": we force the rebuild.
         if (!changed)
             this._deferred(() => this._rebuildItems());
         return true;
     }
 
-    // Índice de inserción entre los iconos del grupo (la fuente ya no está en
-    // el dock: DND la sacó). Devuelve 0..m (m = nº de iconos restantes).
+    // Insertion index among the group's icons (the source is no longer in
+    // the dock: DND removed it). Returns 0..m (m = number of remaining icons).
     _computeGroupDropIndex(source, x, y) {
         const vertical = this._isVertical();
         const coord = vertical ? y : x;
@@ -1791,7 +1791,7 @@ export default class DockStacksExtension extends Extension {
         return newIndex;
     }
 
-    // Devuelve true si el orden cambió (y por tanto habrá reconstrucción).
+    // Returns true if the order changed (and therefore a rebuild will happen).
     _performReorder(source, newIndex) {
         if (source.reorderGroup !== 'pinned')
             return false;
@@ -1799,15 +1799,15 @@ export default class DockStacksExtension extends Extension {
         const from = order.indexOf(source.token);
         if (from < 0)
             return false;
-        // newIndex ya está en el espacio SIN la fuente (0..order.length-1 tras
-        // quitarla), por eso no hay que ajustar índices.
+        // newIndex is already in the space WITHOUT the source (0..order.length-1 after
+        // removing it), so no index adjustment is needed.
         const rest = order.slice();
         rest.splice(from, 1);
         const insert = Math.max(0, Math.min(newIndex, rest.length));
         rest.splice(insert, 0, source.token);
         if (JSON.stringify(rest) === JSON.stringify(order))
-            return false; // sin cambios reales
-        // Diferir la escritura para no mutar durante el propio drop
+            return false; // no real change
+        // Defer the write so we don't mutate during the drop itself
         GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
             this._settings.set_string('dock-order', JSON.stringify(rest));
             return GLib.SOURCE_REMOVE;
@@ -1815,9 +1815,9 @@ export default class DockStacksExtension extends Extension {
         return true;
     }
 
-    // Construye la lista unificada de elementos anclados (favoritos + stacks),
-    // respetando el orden guardado en 'dock-order' y añadiendo al final los
-    // elementos nuevos que aún no estén en ese orden.
+    // Builds the unified list of pinned items (favorites + stacks),
+    // respecting the order saved in 'dock-order' and appending at the end the
+    // new items not yet in that order.
     _computePinnedEntries() {
         const favApps = new Map(); // appId -> Shell.App
         if (this._settings.get_boolean('show-favorites')) {
@@ -1833,7 +1833,7 @@ export default class DockStacksExtension extends Extension {
             const parsed = JSON.parse(this._settings.get_string('dock-order'));
             if (Array.isArray(parsed))
                 saved = parsed;
-        } catch (_e) { /* orden vacío */ }
+        } catch (_e) { /* empty order */ }
 
         const entries = [];
         const usedFav = new Set();
@@ -1855,12 +1855,12 @@ export default class DockStacksExtension extends Extension {
                 }
             }
         }
-        // Favoritos nuevos (en su orden natural) aún no incluidos
+        // New favorites (in their natural order) not yet included
         for (const [appId, app] of favApps) {
             if (!usedFav.has(appId))
                 entries.push({kind: 'fav', token: `fav:${appId}`, app});
         }
-        // Stacks nuevos aún no incluidos
+        // New stacks not yet included
         for (const s of stacks) {
             if (!usedStack.has(s.id))
                 entries.push({kind: 'stack', token: `stack:${s.id}`, stack: s});
@@ -1873,7 +1873,7 @@ export default class DockStacksExtension extends Extension {
         if (stack.icon) {
             gicon = Gio.icon_new_for_string(stack.icon);
         } else if (stack.type === 'folder' && stack.path) {
-            // Icono según primeros elementos (aprox macOS): usamos icono de carpeta
+            // Icon based on first items (approx. macOS): we use a folder icon
             gicon = new Gio.ThemedIcon({name: 'folder-symbolic'});
             try {
                 const f = Gio.File.new_for_path(stack.path);
@@ -1902,14 +1902,14 @@ export default class DockStacksExtension extends Extension {
         const iconSize = Math.max(32, this._settings.get_int('icon-size'));
         const style = stack.style || this._settings.get_string('stack-style');
 
-        // Raíz modal a pantalla completa
+        // Full-screen modal root
         const overlay = new St.Widget({
             reactive: true,
             x: 0, y: 0,
             width: global.stage.width,
             height: global.stage.height,
         });
-        // Fondo transparente: clic fuera => cerrar
+        // Transparent background: click outside => close
         const bg = new St.Widget({
             reactive: true,
             x: 0, y: 0,
@@ -1964,7 +1964,7 @@ export default class DockStacksExtension extends Extension {
             py = by + sourceBtn.height + 8;
         popup.set_position(Math.round(px), Math.round(py));
 
-        // Aparición rápida (casi instantánea) del contenedor
+        // Fast (near-instant) appearance of the container
         popup.set_pivot_point(0.5, 1.0);
         popup.scale_y = 0.9;
         popup.translation_y = 12;
@@ -1986,7 +1986,7 @@ export default class DockStacksExtension extends Extension {
 
         const MAX_FAN = 14;
         const ordered = entries.slice(0, MAX_FAN);
-        // Cabecera "Abrir carpeta" en la cima (solo stacks de carpeta)
+        // "Open folder" header on top (folder stacks only)
         if (stack.type === 'folder' && stack.path) {
             ordered.push({
                 name: 'Abrir carpeta',
@@ -1997,11 +1997,11 @@ export default class DockStacksExtension extends Extension {
         }
 
         const goingUp = this._settings.get_string('position') !== 'top';
-        const step = iconSize + 18;   // separación vertical entre elementos
-        const curve = this._settings.get_int('fan-curve'); // curvatura de la tira
-        const startY = by - 6;        // justo encima del dock
+        const step = iconSize + 18;   // vertical spacing between items
+        const curve = this._settings.get_int('fan-curve'); // strip curvature
+        const startY = by - 6;        // just above the dock
         const n = ordered.length;
-        // Desplazamiento horizontal del arco para el elemento i (0 abajo → n-1 arriba)
+        // Horizontal arc offset for item i (0 bottom → n-1 top)
         const curveX = (i) => {
             const t = n > 1 ? i / (n - 1) : 0;
             return curve * Math.sin(t * Math.PI / 2);
@@ -2027,18 +2027,18 @@ export default class DockStacksExtension extends Extension {
             const [, cw] = cell.get_preferred_width(-1);
             const [, ch] = cell.get_preferred_height(cw);
 
-            // Tira semi-curva estilo macOS: la COLUMNA DE ICONOS sigue el arco.
-            // El icono es el último hijo de la celda, así que anclamos por el
-            // borde derecho para que todos los iconos queden alineados y las
-            // etiquetas (de distinto ancho) crezcan hacia la izquierda.
-            const RPAD = 6;                 // padding derecho de la celda (CSS)
+            // macOS-style semi-curved strip: the ICON COLUMN follows the arc.
+            // The icon is the cell's last child, so we anchor by the
+            // right edge so all icons stay aligned and the
+            // labels (of varying width) grow toward the left.
+            const RPAD = 6;                 // cell right padding (CSS)
             const iconAnchorX = centerX + curveX(i);
             let tx = iconAnchorX - cw + RPAD + iconSize / 2;
             let ty = goingUp ? startY - (i + 1) * step : startY + (i + 1) * step;
             tx = Math.max(monitor.x + 8, Math.min(tx, monitor.x + monitor.width - cw - 8));
             ty = Math.max(monitor.y + 8, Math.min(ty, monitor.y + monitor.height - ch - 8));
 
-            // Estado inicial: todos apilados sobre el icono del dock (colapsados)
+            // Initial state: all stacked over the dock icon (collapsed)
             const startX = centerX - cw + RPAD + iconSize / 2;
             cell.set_position(Math.round(startX), Math.round(startY - ch));
             cell.opacity = 0;
@@ -2046,7 +2046,7 @@ export default class DockStacksExtension extends Extension {
             cell.scale_x = 0.4;
             cell.scale_y = 0.4;
 
-            // Despliegue en abanico rápido (casi instantáneo)
+            // Fast (near-instant) fan deployment
             cell.ease({
                 x: Math.round(tx),
                 y: Math.round(ty),
@@ -2062,7 +2062,7 @@ export default class DockStacksExtension extends Extension {
 
     _makeFanCell(entry, iconSize, onClick) {
         const cell = new St.Button({style_class: 'dock-fan-cell', can_focus: true});
-        // El marco (pastilla) envuelve el nombre Y el icono juntos
+        // The frame (pill) wraps the name AND the icon together
         const frame = new St.BoxLayout({
             style_class: 'dock-fan-frame',
             orientation: Clutter.Orientation.HORIZONTAL,
@@ -2135,7 +2135,7 @@ export default class DockStacksExtension extends Extension {
                 logError(e, 'Dock Stacks: no se pudo leer la carpeta');
             }
         }
-        // Ordenar por nombre según la configuración (ascendente / descendente)
+        // Sort by name per the settings (ascending / descending)
         entries.sort((a, b) => a.name.localeCompare(b.name));
         if (this._settings.get_string('stack-sort') === 'desc')
             entries.reverse();
@@ -2180,13 +2180,13 @@ export default class DockStacksExtension extends Extension {
             ? Clutter.Orientation.VERTICAL
             : Clutter.Orientation.HORIZONTAL;
         const op = this._settings.get_int('background-opacity') / 100;
-        // Opacidad vía inline style sobre el color de fondo
+        // Opacity via inline style on the background color
         this._dock.set_style(
             `background-color: rgba(30,30,30,${op.toFixed(2)});`);
         this._relayout();
     }
 
-    // ------------------------------------------------ ocultado (auto/intelli)
+    // ------------------------------------------------ hiding (auto/intelli)
     _applyAutohide() {
         const autohide = this._settings.get_boolean('autohide');
         const intellihide = this._settings.get_boolean('intellihide');
@@ -2199,7 +2199,7 @@ export default class DockStacksExtension extends Extension {
         }
 
         if (needEdge) {
-            // Borde caliente para revelar el dock oculto
+            // Hot edge to reveal the hidden dock
             this._hotEdge = new St.Widget({reactive: true});
             Main.layoutManager.addChrome(this._hotEdge, {affectsStruts: false});
             this._hotEdge.connect('enter-event', () => {
@@ -2212,7 +2212,7 @@ export default class DockStacksExtension extends Extension {
         this._updateVisibility();
     }
 
-    // Revelar temporalmente (ratón en el borde o sobre el dock)
+    // Reveal temporarily (mouse at the edge or over the dock)
     _reveal() {
         this._revealed = true;
         this._cancelHideTimer();
@@ -2251,7 +2251,7 @@ export default class DockStacksExtension extends Extension {
         }
     }
 
-    // Recalcula la visibilidad con un pequeño retardo, agrupando ráfagas de eventos
+    // Recomputes visibility with a small delay, grouping bursts of events
     _scheduleVisibility() {
         if (this._visTimeout)
             return;
@@ -2262,7 +2262,7 @@ export default class DockStacksExtension extends Extension {
         });
     }
 
-    // Reaplica la reserva de espacio (struts) re-registrando la chrome
+    // Reapplies the reserved space (struts) by re-registering the chrome
     _applyReserveSpace() {
         if (!this._container)
             return;
@@ -2273,25 +2273,25 @@ export default class DockStacksExtension extends Extension {
                 affectsStruts: reserve,
                 trackFullscreen: true,
             });
-        } catch (_e) { /* el chrome puede no estar añadido aún */ }
+        } catch (_e) { /* the chrome may not be added yet */ }
         this._relayout();
         this._updateVisibility();
     }
 
-    // Decide si el dock debe verse
+    // Decides whether the dock should be shown
     _updateVisibility() {
         if (!this._container)
             return;
-        // En pantalla completa (juegos, vídeo) ocultar el dock, por encima de
-        // "reservar espacio" / intellihide / autohide. No se tocan los struts:
-        // una ventana en pantalla completa los ignora y GNOME oculta el chrome
-        // por 'trackFullscreen'. (Recrear el chrome aquí causaba que la primera
-        // transición a pantalla completa no ocultara bien las barras.)
+        // In fullscreen (games, video) hide the dock, above
+        // "reserve space" / intellihide / autohide. Struts are not touched:
+        // a fullscreen window ignores them and GNOME hides the chrome
+        // via 'trackFullscreen'. (Recreating the chrome here made the first
+        // fullscreen transition fail to hide the bars properly.)
         if (this._shouldHideForWindow()) {
             this._showDock(false);
             return;
         }
-        // Si se reserva espacio, el dock está siempre visible (no se oculta)
+        // If space is reserved, the dock is always visible (never hidden)
         if (this._settings.get_boolean('reserve-space')) {
             this._showDock(true);
             return;
@@ -2321,21 +2321,21 @@ export default class DockStacksExtension extends Extension {
         }
     }
 
-    // ¿Debe ocultarse el dock por la ventana activa? Solo en PANTALLA COMPLETA
-    // real (lo que hacen los juegos como WoW en modo "Pantalla completa"), o una
-    // ventana sin bordes que cubre TODO el monitor. NO con ventanas meramente
-    // maximizadas (el launcher de Battle.net, Firefox, etc.), que son
-    // indistinguibles entre sí y deben conservar las barras.
+    // Should the dock hide because of the active window? Only in REAL FULLSCREEN
+    // (what games like WoW do in "Fullscreen" mode), or a
+    // borderless window covering the WHOLE monitor. NOT with merely
+    // maximized windows (the Battle.net launcher, Firefox, etc.), which are
+    // indistinguishable from each other and must keep the bars.
     _shouldHideForWindow() {
         return this._isMonitorInFullscreen() ||
                this._hasFullMonitorWindow();
     }
 
-    // Detecta juegos en "ventana sin bordes" (fake fullscreen): una ventana
-    // NORMAL, no maximizada, cuyo marco cubre el monitor COMPLETO (incluida la
-    // zona de la barra superior). Comparar con la geometría completa del
-    // monitor —no con el área de trabajo— distingue este modo de una ventana
-    // simplemente maximizada (que respeta la barra superior).
+    // Detects games in "borderless window" (fake fullscreen): a NORMAL,
+    // non-maximized window whose frame covers the WHOLE monitor (including the
+    // top bar area). Comparing against the full monitor geometry
+    // —not the work area— distinguishes this mode from a merely
+    // maximized window (which respects the top bar).
     _hasFullMonitorWindow() {
         try {
             const idx = Main.layoutManager.primaryIndex;
@@ -2351,7 +2351,7 @@ export default class DockStacksExtension extends Extension {
                     continue;
                 if (w.get_window_type() !== Meta.WindowType.NORMAL)
                     continue;
-                // Ignorar ventanas simplemente maximizadas.
+                // Ignore merely maximized windows.
                 if (w.get_maximized &&
                     w.get_maximized() === (Meta.MaximizeFlags.HORIZONTAL | Meta.MaximizeFlags.VERTICAL))
                     continue;
@@ -2361,7 +2361,7 @@ export default class DockStacksExtension extends Extension {
                     r.y + r.height >= m.y + m.height)
                     return true;
             }
-        } catch (_e) { /* sin cambios */ }
+        } catch (_e) { /* no changes */ }
         return false;
     }
 
@@ -2395,8 +2395,8 @@ export default class DockStacksExtension extends Extension {
             return;
         const c = this._container;
         if (this._dockShown === show) {
-            // Auto-corrección: si el estado ya es el deseado pero la animación
-            // quedó a medias (sin transición en curso), fijar el estado final.
+            // Self-correction: if the state is already the desired one but the animation
+            // was left half-way (no ongoing transition), set the final state.
             if (!c.get_transition('opacity')) {
                 if (show) {
                     if (!c.visible || c.opacity !== 255 ||
@@ -2417,11 +2417,11 @@ export default class DockStacksExtension extends Extension {
             return;
         }
         this._dockShown = show;
-        // Cancela cualquier animación pendiente (y su onComplete obsoleto)
+        // Cancels any pending animation (and its stale onComplete)
         c.remove_all_transitions();
         c.reactive = show;
 
-        // Desplazamiento de entrada/salida según la posición del dock
+        // Slide-in/out offset according to the dock position
         const pos = this._settings.get_string('position');
         const w = (this._dockHomeRect ? this._dockHomeRect.width : this._container.width) || 80;
         const h = (this._dockHomeRect ? this._dockHomeRect.height : this._container.height) || 80;
@@ -2432,15 +2432,15 @@ export default class DockStacksExtension extends Extension {
         else if (pos === 'right')
             offX = w + 16;
         else
-            offY = h + 16; // inferior: se desliza desde abajo
+            offY = h + 16; // bottom: slides in from below
 
         if (show) {
             this._container.visible = true;
-            // Estado inicial: fuera de pantalla y transparente
+            // Initial state: off-screen and transparent
             this._container.translation_x = offX;
             this._container.translation_y = offY;
             this._container.opacity = 0;
-            // Aparición rápida y fluida deslizándose hasta su sitio
+            // Fast, smooth appearance sliding into place
             this._container.ease({
                 translation_x: 0,
                 translation_y: 0,
@@ -2448,7 +2448,7 @@ export default class DockStacksExtension extends Extension {
                 duration: 200,
                 mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
                 onComplete: () => {
-                    // Fijar el estado final por si la animación se interrumpió
+                    // Set the final state in case the animation was interrupted
                     if (this._dockShown && this._container) {
                         this._container.translation_x = 0;
                         this._container.translation_y = 0;
@@ -2464,7 +2464,7 @@ export default class DockStacksExtension extends Extension {
                 duration: 160,
                 mode: Clutter.AnimationMode.EASE_IN_CUBIC,
                 onComplete: () => {
-                    // Solo ocultar si sigue siendo el estado deseado
+                    // Only hide if it's still the desired state
                     if (this._dockShown === false && this._container) {
                         this._container.visible = false;
                         this._container.translation_x = 0;
@@ -2484,8 +2484,8 @@ export default class DockStacksExtension extends Extension {
 
         const [, dockW] = this._container.get_preferred_width(-1);
         const [, dockH] = this._container.get_preferred_height(-1);
-        // Con reserva de espacio, el dock debe TOCAR el borde para que Mutter
-        // reserve el espacio (los struts solo cuentan si el actor llega al borde).
+        // With reserved space, the dock must TOUCH the edge so Mutter
+        // reserves the space (struts only count if the actor reaches the edge).
         const margin = this._settings.get_boolean('reserve-space') ? 0 : 6;
         const pos = this._settings.get_string('position');
 
@@ -2501,10 +2501,10 @@ export default class DockStacksExtension extends Extension {
             y = monitor.y + Math.round((monitor.height - dockH) / 2);
         }
         this._container.set_position(x, y);
-        // Rect "de casa" del dock (posición visible), usado para detectar solape
+        // The dock's "home" rect (visible position), used to detect overlap
         this._dockHomeRect = {x, y, width: dockW, height: dockH};
 
-        // Borde caliente pegado al borde de la pantalla
+        // Hot edge stuck to the screen edge
         if (this._hotEdge) {
             if (pos === 'bottom') {
                 this._hotEdge.set_position(monitor.x, monitor.y + monitor.height - 2);
@@ -2522,7 +2522,7 @@ export default class DockStacksExtension extends Extension {
         this._scheduleIconGeometryUpdate();
     }
 
-    // Hace que la animación de minimizar apunte al icono del dock
+    // Makes the minimize animation target the dock icon
     _scheduleIconGeometryUpdate() {
         if (this._geomIdle)
             return;
@@ -2534,8 +2534,8 @@ export default class DockStacksExtension extends Extension {
     }
 
     _updateIconGeometries() {
-        // Solo cuando el dock está visible/mapeado (posiciones válidas).
-        // Si está oculto, se conserva la última geometría (misma posición de casa).
+        // Only when the dock is visible/mapped (valid positions).
+        // If hidden, the last geometry is kept (same home position).
         if (!this._container || !this._container.visible || !this._appButtonList)
             return;
         for (const {app, btn} of this._appButtonList) {
@@ -2558,7 +2558,7 @@ export default class DockStacksExtension extends Extension {
                 });
                 for (const win of wins)
                     win.set_icon_geometry(rect);
-            } catch (_e) { /* actor destruido u otro problema puntual */ }
+            } catch (_e) { /* actor destroyed or another one-off issue */ }
         }
     }
 }

@@ -1,19 +1,19 @@
-/* Dock Stack — traducciones propias (es, en, pt, fr, de).
+/* Dock Stack — own translations (es, en, pt, fr, de).
  *
- * Se usa un diccionario propio en vez de gettext para poder:
- *  - Seleccionar el idioma desde la configuración (clave 'language').
- *  - Detectar el idioma del sistema y, si no está soportado, usar inglés.
+ * A custom dictionary is used instead of gettext in order to:
+ *  - Select the language from the settings ('language' key).
+ *  - Detect the system language and, if unsupported, fall back to English.
  *
- * Las claves son las cadenas en ESPAÑOL (idioma base del código). Para el
- * español el traductor devuelve la propia clave; para el resto se busca en el
- * mapa del idioma y, si falta, se cae a inglés y por último a la clave.
+ * The keys are the SPANISH strings (the code's base language). For
+ * Spanish the translator returns the key itself; for the rest it looks it up
+ * in the language map and, if missing, falls back to English and then the key.
  */
 
 import GLib from 'gi://GLib';
 
 export const SUPPORTED = ['es', 'en', 'pt', 'fr', 'de'];
 
-// Nombres de los idiomas (para el selector de la configuración).
+// Language names (for the settings selector).
 export const LANGUAGE_CHOICES = [
     ['auto', 'Automático (según el sistema)'],
     ['es', 'Español'],
@@ -24,7 +24,7 @@ export const LANGUAGE_CHOICES = [
 ];
 
 const EN = {
-    // --- General / preferencias ---
+    // --- General / preferences ---
     'Acerca De': 'About',
     'Aplicaciones y Utilitarios': 'Applications and Utilities',
     'General': 'General',
@@ -143,12 +143,12 @@ const EN = {
     'Aceptar': 'OK',
     'Elegir aplicaciones': 'Choose applications',
     'Listo': 'Done',
-    // --- Idioma ---
+    // --- Language ---
     'Idioma': 'Language',
     'Idioma de la extensión': 'Extension language',
     'Cambia el idioma de los textos de la extensión (dock, menús y esta ventana). "Automático" sigue el idioma del sistema.': 'Changes the language of the extension texts (dock, menus and this window). "Automatic" follows the system language.',
     'Automático (según el sistema)': 'Automatic (system default)',
-    // --- extension.js (dock, menús, rejilla) ---
+    // --- extension.js (dock, menus, grid) ---
     '(vacío)': '(empty)',
     'Cerrar': 'Close',
     'Quitar del dock': 'Remove from dock',
@@ -162,7 +162,7 @@ const EN = {
     'Lanzar': 'Launch',
     'Quitar de favoritos': 'Unpin from favorites',
     'Buscar aplicaciones…': 'Search applications…',
-    // categorías de la rejilla
+    // grid categories
     'Favoritos': 'Favorites',
     'Desarrollo': 'Development',
     'Juegos': 'Games',
@@ -624,23 +624,23 @@ function systemLang() {
             if (SUPPORTED.includes(code))
                 return code;
         }
-    } catch (_e) { /* usar respaldo */ }
+    } catch (_e) { /* use fallback */ }
     return 'en';
 }
 
-// Idioma efectivo: 'auto' → idioma del sistema (o inglés si no está soportado);
-// un código explícito y soportado se respeta.
+// Effective language: 'auto' → system language (or English if unsupported);
+// an explicit, supported code is honored.
 export function resolveLanguage(settings) {
     let sel = 'auto';
     try {
         sel = settings.get_string('language');
-    } catch (_e) { /* clave ausente */ }
+    } catch (_e) { /* key missing */ }
     if (sel && sel !== 'auto' && SUPPORTED.includes(sel))
         return sel;
     return systemLang();
 }
 
-// Devuelve una función _(texto_en_español) → texto traducido.
+// Returns a function _(spanish_text) → translated text.
 export function makeTranslator(settings) {
     const lang = resolveLanguage(settings);
     return function (s) {
