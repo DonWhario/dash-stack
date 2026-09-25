@@ -2,8 +2,14 @@
   "uuid": "dock-stack@felipe.local",
   "name": "Dock Stack",
   "description": "Dock inferior con agrupaciones de aplicaciones estilo macOS (stacks que se despliegan en grilla/abanico). Soporta stacks de carpeta y grupos de apps, con panel de preferencias.",
-  "version": 1,
-  "shell-version": ["48"],
+  "version": 2,
+  "version-name": "1.1 alpha",
+  "shell-version": [
+     "48",
+     "49", 
+     "50", 
+     "51"
+  ],
   "settings-schema": "org.gnome.shell.extensions.dock-stack",
   "gettext-domain": "dock-stack",
   "url": "https://github.com/DonWhario/dash-stack"
