@@ -393,6 +393,14 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         settings.bind('custom-app-grid', gridRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         appsGroup.add(gridRow);
 
+        // Efecto genie al abrir/cerrar la rejilla
+        const genieRow = new Adw.SwitchRow({
+            title: _('Efecto genie al abrir/cerrar'),
+            subtitle: _('La rejilla crece o se encoge desde el botón de menú (estilo genio de macOS)'),
+        });
+        settings.bind('appgrid-genie', genieRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+        appsGroup.add(genieRow);
+
         // Tema de la rejilla (claro/oscuro)
         const themeModel = new Gtk.StringList();
         [_('Oscuro'), _('Claro')].forEach(s => themeModel.append(s));

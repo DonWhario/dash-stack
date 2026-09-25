@@ -144,6 +144,9 @@ export default class DockStacksExtension extends Extension {
         this._dragActive = false;
         this._pendingRebuild = false;
         this._reorderCtx = null;
+        this._appGridClosing = false;
+        this._appGridPanel = null;
+        this._appGridBg = null;
 
         this._buildDock();
         this._applyGnomeIntegration();
@@ -752,14 +755,15 @@ export default class DockStacksExtension extends Extension {
         const icon = new St.Icon({gicon, icon_size: iconSize});
         const btn = new DockItemButton(icon, _('Aplicaciones'), iconSize);
         btn.add_style_class_name('dock-apps-button');
+        this._appsButtonActor = btn;   // referencia para el efecto genie
         this._attachTooltip(btn, _('Aplicaciones'));
         btn.connect('clicked', () => {
             this._closeStack();
             if (this._settings.get_boolean('custom-app-grid')) {
                 if (this._appGridOverlay)
-                    this._closeAppGrid();
+                    this._closeAppGrid(true);
                 else
-                    this._openAppGrid();
+                    this._openAppGrid(btn);
             } else if (Main.overview.visible && Main.overview.dash?.showAppsButton?.checked) {
                 Main.overview.hide();
             } else {
@@ -1118,14 +1122,16 @@ export default class DockStacksExtension extends Extension {
     }
 
     // -------------------------------------------- rejilla de apps propia
-    _openAppGrid() {
+    _openAppGrid(srcBtn) {
         this._closeAppGrid();
         this._closeStack();
         this._hideTooltip();
+        this._appGridSrcBtn = srcBtn || this._appsButtonActor || null;
 
         const monitor = Main.layoutManager.primaryMonitor;
+        // Overlay contenedor TRANSPARENTE (el oscurecido va en 'bg' para poder
+        // animarlo independientemente del panel en el efecto genie).
         const overlay = new St.Widget({
-            style_class: 'dock-appgrid-overlay',
             reactive: true,
             x: monitor.x,
             y: monitor.y,
@@ -1137,7 +1143,7 @@ export default class DockStacksExtension extends Extension {
                 if (this._appGridMenu)
                     this._closeAppGridMenu();
                 else
-                    this._closeAppGrid();
+                    this._closeAppGrid(true);
                 return Clutter.EVENT_STOP;
             }
             return Clutter.EVENT_PROPAGATE;
@@ -1145,12 +1151,14 @@ export default class DockStacksExtension extends Extension {
         Main.layoutManager.uiGroup.add_child(overlay);
         // Registrar ya el overlay para poder cerrarlo siempre (aunque algo falle)
         this._appGridOverlay = overlay;
+        this._appGridClosing = false;
 
-        // Fondo HERMANO (no ancestro) que captura los clics fuera del panel para
-        // cerrar. Se usa un hermano —como en el popup de stacks— en lugar de
+        // Fondo HERMANO (no ancestro) que oscurece y captura los clics fuera del
+        // panel para cerrar. Es hermano —como en el popup de stacks— en lugar de
         // absorber el evento en un ancestro del panel, porque eso rompía el
         // ciclo pulsar→soltar de los St.Button internos (no emitían 'clicked').
         const bg = new St.Widget({
+            style_class: 'dock-appgrid-overlay',
             reactive: true,
             x: 0, y: 0,
             width: monitor.width,
@@ -1160,10 +1168,11 @@ export default class DockStacksExtension extends Extension {
             if (this._appGridMenu)
                 this._closeAppGridMenu();
             else
-                this._closeAppGrid();
+                this._closeAppGrid(true);
             return Clutter.EVENT_STOP;
         });
         overlay.add_child(bg);
+        this._appGridBg = bg;
 
         const ph = Math.min(monitor.height - 140, 820);
         const sidebarW = 265;
@@ -1187,10 +1196,14 @@ export default class DockStacksExtension extends Extension {
         });
         panel.set_size(pw, ph);
         // Centrado: misma distancia a izquierda y derecha
-        panel.set_position(
-            Math.round((monitor.width - pw) / 2),
-            Math.round((monitor.height - ph) / 2));
+        const panelX = Math.round((monitor.width - pw) / 2);
+        const panelY = Math.round((monitor.height - ph) / 2);
+        panel.set_position(panelX, panelY);
         overlay.add_child(panel);
+        this._appGridPanel = panel;
+        // Pivote del efecto genie hacia el centro del botón de menú
+        this._setGeniePivot(panel, this._appGridSrcBtn,
+            monitor.x + panelX, monitor.y + panelY, pw, ph);
 
         // Marcos interiores: blanco (claro) u oscuro, según el selector; opacidad configurable
         const opacity = this._settings.get_int('appgrid-opacity') / 100;
@@ -1401,8 +1414,43 @@ export default class DockStacksExtension extends Extension {
         }
         search.grab_key_focus();
 
-        overlay.opacity = 0;
-        overlay.ease({opacity: 255, duration: 150, mode: Clutter.AnimationMode.EASE_OUT_QUAD});
+        overlay.opacity = 255;
+        if (this._settings.get_boolean('appgrid-genie')) {
+            // Efecto "genie": el panel crece desde el botón mientras el fondo
+            // se oscurece. El pivote ya apunta al centro del botón.
+            bg.opacity = 0;
+            bg.ease({opacity: 255, duration: 200, mode: Clutter.AnimationMode.EASE_OUT_QUAD});
+            panel.opacity = 0;
+            panel.set_scale(0.12, 0.12);
+            panel.ease({
+                scale_x: 1, scale_y: 1, opacity: 255,
+                duration: 300,
+                mode: Clutter.AnimationMode.EASE_OUT_EXPO,
+            });
+        } else {
+            overlay.opacity = 0;
+            overlay.ease({opacity: 255, duration: 150, mode: Clutter.AnimationMode.EASE_OUT_QUAD});
+        }
+    }
+
+    // Fija el pivote de escalado del panel hacia el centro del botón de menú
+    // (coordenadas de escena). El pivote es normalizado y puede salir de 0..1.
+    _setGeniePivot(panel, srcBtn, panelStageX, panelStageY, pw, ph) {
+        let cx, cy;
+        try {
+            if (srcBtn && srcBtn.get_stage()) {
+                const [bx, by] = srcBtn.get_transformed_position();
+                cx = bx + srcBtn.width / 2;
+                cy = by + srcBtn.height / 2;
+            } else {
+                const m = Main.layoutManager.primaryMonitor;
+                cx = m.x + m.width / 2;
+                cy = m.y + m.height; // borde inferior (dock abajo por defecto)
+            }
+            panel.set_pivot_point((cx - panelStageX) / pw, (cy - panelStageY) / ph);
+        } catch (_e) {
+            panel.set_pivot_point(0.5, 1);
+        }
     }
 
     _populateAppGrid(query) {
@@ -1537,16 +1585,47 @@ export default class DockStacksExtension extends Extension {
         }
     }
 
-    _closeAppGrid() {
+    _closeAppGrid(animate = false) {
         this._closeAppGridMenu();
-        if (this._appGridOverlay) {
-            this._appGridOverlay.destroy();
-            this._appGridOverlay = null;
+        const overlay = this._appGridOverlay;
+        if (!overlay)
+            return;
+        const panel = this._appGridPanel;
+        const bg = this._appGridBg;
+        const finish = () => {
+            try {
+                overlay.destroy();
+            } catch (_e) { /* ya destruido */ }
+            if (this._appGridOverlay === overlay)
+                this._appGridOverlay = null;
+            this._appGridBox = null;
+            this._appGridFiltered = null;
+            this._appGridSearch = null;
+            this._catButtons = null;
+            this._appGridPanel = null;
+            this._appGridBg = null;
+            this._appGridClosing = false;
+        };
+
+        if (animate && this._settings.get_boolean('appgrid-genie') &&
+            panel && panel.get_stage() && !this._appGridClosing) {
+            // Efecto genie inverso: el panel se encoge hacia el botón y el fondo
+            // se aclara; al terminar se destruye el overlay.
+            this._appGridClosing = true;
+            if (bg)
+                bg.ease({opacity: 0, duration: 200, mode: Clutter.AnimationMode.EASE_IN_QUAD});
+            panel.ease({
+                scale_x: 0.12, scale_y: 0.12, opacity: 0,
+                duration: 260,
+                mode: Clutter.AnimationMode.EASE_IN_EXPO,
+                onComplete: finish,
+            });
+        } else {
+            // Cierre inmediato: cancela cualquier animación en curso y limpia ya.
+            if (panel)
+                panel.remove_all_transitions();
+            finish();
         }
-        this._appGridBox = null;
-        this._appGridFiltered = null;
-        this._appGridSearch = null;
-        this._catButtons = null;
     }
 
     // -------------------------------------------------- arrastrar para reordenar

@@ -221,6 +221,11 @@
       <summary>Ordenar la rejilla en orden descendente (Z→A) en vez de ascendente</summary>
     </key>
 
+    <key name="appgrid-genie" type="b">
+      <default>true</default>
+      <summary>Efecto genie (crecer/encogerse desde el botón) al abrir/cerrar la rejilla</summary>
+    </key>
+
     <key name="language" enum="org.gnome.shell.extensions.dock-stack.language">
       <default>"auto"</default>
       <summary>Idioma de la extensión (auto sigue el sistema; si no está soportado, inglés)</summary>
