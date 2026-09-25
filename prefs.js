@@ -513,6 +513,35 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         settings.bind('enable-appindicator', aiRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         gnomeGroup.add(aiRow);
 
+        // ---- Efectos de ventana (integración con Burn My Windows) ----
+        const weGroup = new Adw.PreferencesGroup({
+            title: _('Efectos de ventana'),
+            description: _('Con Burn My Windows instalado, las ventanas se abren, cierran y minimizan con efectos; Dock Stack hace que el minimizado apunte al icono del dock.'),
+        });
+        page.add(weGroup);
+
+        const bmwUuid = 'burn-my-windows@schneegans.github.com';
+        const bmwInstalled =
+            GLib.file_test(
+                GLib.build_filenamev([GLib.get_home_dir(),
+                    '.local/share/gnome-shell/extensions', bmwUuid]),
+                GLib.FileTest.IS_DIR) ||
+            GLib.file_test('/usr/share/gnome-shell/extensions/' + bmwUuid,
+                GLib.FileTest.IS_DIR);
+
+        const bmwRow = new Adw.ActionRow({
+            title: bmwInstalled
+                ? _('Burn My Windows está instalada')
+                : _('Burn My Windows no está instalada'),
+        });
+        const bmwLink = new Gtk.LinkButton({
+            label: _('Obtener Burn My Windows'),
+            uri: 'https://extensions.gnome.org/extension/4679/burn-my-windows/',
+            valign: Gtk.Align.CENTER,
+        });
+        bmwRow.add_suffix(bmwLink);
+        weGroup.add(bmwRow);
+
         // Grupo stacks
         const sgroup = new Adw.PreferencesGroup({title: _('Despliegue de stacks')});
         page.add(sgroup);
