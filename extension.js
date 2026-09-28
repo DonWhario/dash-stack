@@ -946,6 +946,35 @@ export default class DockStacksExtension extends Extension {
         }
     }
 
+    // Fan hover: smoothly grow the hovered card to its full width so the
+    // ellipsized name is revealed in place, then shrink back on leave. No
+    // separate text tooltip — the box itself enlarges.
+    _attachFanHover(cell, baseW, fullW) {
+        const monitor = Main.layoutManager.primaryMonitor;
+        const target = Math.min(fullW, monitor.width - 24);
+        if (target <= baseW + 2)
+            return; // the name already fits; nothing to reveal
+        cell.connect('enter-event', () => {
+            const parent = cell.get_parent();
+            if (parent)
+                parent.set_child_above_sibling(cell, null); // keep it on top
+            cell.ease({
+                width: target,
+                duration: 200,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            });
+            return Clutter.EVENT_PROPAGATE;
+        });
+        cell.connect('leave-event', () => {
+            cell.ease({
+                width: baseW,
+                duration: 180,
+                mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+            });
+            return Clutter.EVENT_PROPAGATE;
+        });
+    }
+
     _hideTooltip() {
         this._cancelTooltip();
         if (this._tooltip) {
@@ -2041,13 +2070,18 @@ export default class DockStacksExtension extends Extension {
             });
             overlay.add_child(cell);
 
+            let cw;
             if (useTilt) {
+                // Measure the full (natural) width before clamping to the
+                // uniform fan width, so hover can grow the card back to it and
+                // reveal the ellipsized name.
+                const fullW = cell.get_preferred_width(-1)[1];
                 cell.set_width(fanW);
-                // Names are ellipsized to the uniform width, so reveal the full
-                // one on hover (shown to the right of the card).
-                this._attachTooltip(cell, entry.name, 'left');
+                this._attachFanHover(cell, fanW, fullW);
+                cw = fanW;
+            } else {
+                cw = cell.get_preferred_width(-1)[1];
             }
-            const cw = useTilt ? fanW : cell.get_preferred_width(-1)[1];
             const [, ch] = cell.get_preferred_height(cw);
 
             let tx, ty;
