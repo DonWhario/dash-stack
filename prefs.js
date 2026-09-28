@@ -716,8 +716,9 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             actionGroup.add(row);
         };
         addRow(_('Añadir: Reproduciendo ahora'), _('Controles de música/vídeo (MPRIS)'), 'audio-x-generic-symbolic', 'mpris');
-        addRow(_('Añadir: Clima'), _('Ubicación, temperatura y condición'), 'weather-clear-symbolic', 'weather');
-        addRow(_('Añadir: Sistema / reloj'), _('Reloj, CPU, RAM y batería'), 'utilities-system-monitor-symbolic', 'system');
+        addRow(_('Añadir: Clima'), _('Temperatura y condición (automático)'), 'weather-clear-symbolic', 'weather');
+        addRow(_('Añadir: Sistema'), _('CPU, RAM y batería con mini gráfico'), 'utilities-system-monitor-symbolic', 'system');
+        addRow(_('Añadir: Reloj'), _('Hora y fecha'), 'preferences-system-time-symbolic', 'clock');
         addRow(_('Añadir: Script'), _('Muestra la salida de un comando tuyo'), 'utilities-terminal-symbolic', 'script');
 
         this._refreshWidgetList();
@@ -727,7 +728,8 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         switch (type) {
         case 'mpris': return _('Reproduciendo ahora');
         case 'weather': return _('Clima');
-        case 'system': return _('Sistema / reloj');
+        case 'system': return _('Sistema');
+        case 'clock': return _('Reloj');
         case 'script': return _('Script');
         default: return _('Widget');
         }
@@ -793,7 +795,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             wd.connect('notify::value', () => this._updateWidget(w.id, {width: Math.round(wd.get_value())}));
             exp.add_row(wd);
         } else if (w.type === 'system') {
-            const fields = Object.assign({clock: true, cpu: true, ram: true, battery: true}, w.fields || {});
+            const fields = Object.assign({cpu: true, ram: true, battery: true}, w.fields || {});
             const mk = (key, title) => {
                 const sw = new Adw.SwitchRow({title, active: !!fields[key]});
                 sw.connect('notify::active', () => {
@@ -802,10 +804,16 @@ export default class DockStacksPreferences extends ExtensionPreferences {
                 });
                 exp.add_row(sw);
             };
-            mk('clock', _('Reloj'));
-            mk('cpu', _('CPU'));
+            mk('cpu', _('CPU (gráfico)'));
             mk('ram', _('RAM'));
             mk('battery', _('Batería'));
+        } else if (w.type === 'clock') {
+            const sw24 = new Adw.SwitchRow({title: _('Formato 24 horas'), active: w.format24 !== false});
+            sw24.connect('notify::active', () => this._updateWidget(w.id, {format24: sw24.get_active()}));
+            exp.add_row(sw24);
+            const swDate = new Adw.SwitchRow({title: _('Mostrar fecha'), active: w.showDate !== false});
+            swDate.connect('notify::active', () => this._updateWidget(w.id, {showDate: swDate.get_active()}));
+            exp.add_row(swDate);
         } else {
             exp.add_row(new Adw.ActionRow({subtitle: _('Sin ajustes. Controla el reproductor activo.')}));
         }
@@ -818,7 +826,9 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         if (type === 'script')
             Object.assign(w, {command: '', label: '', interval: 10, width: 180});
         else if (type === 'system')
-            w.fields = {clock: true, cpu: true, ram: true, battery: true};
+            w.fields = {cpu: true, ram: true, battery: true};
+        else if (type === 'clock')
+            Object.assign(w, {format24: true, showDate: true});
         widgets.push(w);
         writeWidgets(this._settings, widgets);
         this._refreshWidgetList();

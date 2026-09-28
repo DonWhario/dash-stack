@@ -121,7 +121,7 @@
     <key name="widgets" type="s">
       <default>"[]"</default>
       <summary>Definición de widgets del dock (JSON)</summary>
-      <description>Lista JSON de widgets. Cada widget: {id,type:'mpris'|'weather'|'system'|'script', location?, command?, label?, interval?, width?, fields?:{clock,cpu,ram,battery}}. Se colocan en el dock según el orden de "dock-order" con el token "widget:&lt;id&gt;".</description>
+      <description>Lista JSON de widgets. Cada widget: {id,type:'mpris'|'weather'|'system'|'clock'|'script', command?, label?, interval?, width?, fields?:{cpu,ram,battery}, format24?, showDate?}. El clima es automático (por IP). Se colocan en el dock según el orden de "dock-order" con el token "widget:&lt;id&gt;".</description>
     </key>
 
     <key name="dock-order" type="s">

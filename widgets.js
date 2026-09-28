@@ -50,6 +50,7 @@ export function makeWidget(spec, iconSize, _) {
     case 'mpris': return makeMpris(spec, iconSize, _);
     case 'weather': return makeWeather(spec, iconSize, _);
     case 'system': return makeSystem(spec, iconSize, _);
+    case 'clock': return makeClock(spec, iconSize, _);
     case 'script': return makeScript(spec, iconSize, _);
     default: return makePlaceholder(_);
     }
@@ -331,7 +332,78 @@ function readBattery() {
 
 function makeSystem(spec, iconSize, _) {
     const box = card('dock-widget-system');
-    const show = spec.fields || {clock: true, cpu: true, ram: true, battery: true};
+    const show = spec.fields || {cpu: true, ram: true, battery: true};
+
+    // Mini CPU-usage sparkline (last N samples).
+    const SAMPLES = 30;
+    const hist = new Array(SAMPLES).fill(0);
+    const graphH = Math.max(34, iconSize);
+    const area = new St.DrawingArea({style_class: 'dock-widget-graph'});
+    area.set_width(58);
+    area.set_height(graphH);
+    area.connect('repaint', () => {
+        const cr = area.get_context();
+        const [w, h] = area.get_surface_size();
+        const n = hist.length;
+        const px = (i) => (n > 1 ? (w * i) / (n - 1) : 0);
+        const py = (v) => h - (Math.max(0, Math.min(100, v)) / 100) * (h - 3) - 1.5;
+        // Filled area under the curve.
+        cr.moveTo(0, h);
+        for (let i = 0; i < n; i++)
+            cr.lineTo(px(i), py(hist[i]));
+        cr.lineTo(w, h);
+        cr.closePath();
+        cr.setSourceRGBA(0.45, 0.72, 1.0, 0.18);
+        cr.fill();
+        // Line on top.
+        cr.setLineWidth(1.5);
+        cr.setSourceRGBA(0.55, 0.8, 1.0, 0.95);
+        for (let i = 0; i < n; i++) {
+            if (i === 0) cr.moveTo(px(i), py(hist[i]));
+            else cr.lineTo(px(i), py(hist[i]));
+        }
+        cr.stroke();
+        cr.$dispose();
+    });
+
+    const info = new St.BoxLayout({style_class: 'dock-widget-text', vertical: true, y_align: CENTER});
+    const l1 = new St.Label({style_class: 'dock-widget-title'});
+    const l2 = new St.Label({style_class: 'dock-widget-sub'});
+    info.add_child(l1);
+    info.add_child(l2);
+
+    box.add_child(area);
+    box.add_child(info);
+
+    let lastCpu = readCpu();
+    const tick = () => {
+        const c = readCpu();
+        const dt = c.total - lastCpu.total;
+        const di = c.idle - lastCpu.idle;
+        const use = dt > 0 ? Math.round((1 - di / dt) * 100) : 0;
+        lastCpu = c;
+        hist.push(use);
+        hist.shift();
+        area.queue_repaint();
+
+        l1.text = show.cpu ? `CPU ${use}%` : _('Sistema');
+        const parts = [];
+        if (show.ram) parts.push(`RAM ${readRam()}%`);
+        if (show.battery) { const b = readBattery(); if (b >= 0) parts.push(`BAT ${b}%`); }
+        l2.text = parts.join('  ·  ');
+        return GLib.SOURCE_CONTINUE;
+    };
+    tick();
+    const timer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 2, tick);
+
+    return {
+        actor: box,
+        destroy() { if (timer) GLib.source_remove(timer); },
+    };
+}
+
+function makeClock(spec, iconSize, _) {
+    const box = card('dock-widget-clock');
     const info = new St.BoxLayout({style_class: 'dock-widget-text', vertical: true, y_align: CENTER});
     const big = new St.Label({style_class: 'dock-widget-time'});
     const sub = new St.Label({style_class: 'dock-widget-sub'});
@@ -339,27 +411,20 @@ function makeSystem(spec, iconSize, _) {
     info.add_child(sub);
     box.add_child(info);
 
-    let lastCpu = readCpu();
+    const fmt24 = spec.format24 !== false;   // default 24h
+    const showDate = spec.showDate !== false; // default show date
+    if (!showDate)
+        sub.hide();
+
     const tick = () => {
         const now = GLib.DateTime.new_now_local();
-        big.text = show.clock ? now.format('%H:%M') : _('Sistema');
-        const parts = [];
-        if (show.clock) parts.push(now.format('%a %d'));
-        if (show.cpu) {
-            const c = readCpu();
-            const dt = c.total - lastCpu.total;
-            const di = c.idle - lastCpu.idle;
-            const use = dt > 0 ? Math.round((1 - di / dt) * 100) : 0;
-            lastCpu = c;
-            parts.push(`CPU ${use}%`);
-        }
-        if (show.ram) parts.push(`RAM ${readRam()}%`);
-        if (show.battery) { const b = readBattery(); if (b >= 0) parts.push(`BAT ${b}%`); }
-        sub.text = parts.join('  ·  ');
+        big.text = now.format(fmt24 ? '%H:%M' : '%I:%M %p');
+        if (showDate)
+            sub.text = now.format('%a %d %b');
         return GLib.SOURCE_CONTINUE;
     };
     tick();
-    const timer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 2, tick);
+    const timer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1, tick);
 
     return {
         actor: box,
