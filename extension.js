@@ -1958,15 +1958,26 @@ export default class DockStacksExtension extends Extension {
         // all motion to this background, so we hit-test the stack buttons here.
         bg.connect('motion-event', (_a, ev) => {
             const [px, py] = ev.get_coords();
+            const over = (btn) => {
+                if (!btn || !btn.get_stage())
+                    return false;
+                const [bx, by] = btn.get_transformed_position();
+                return px >= bx && px <= bx + btn.width &&
+                       py >= by && py <= by + btn.height;
+            };
+            // Over a different stack button → switch to it.
             for (const item of (this._stackButtons || [])) {
-                if (!item.btn || !item.btn.get_stage())
-                    continue;
                 if (item.stack.id === this._currentStackId)
                     continue;
-                const [bx, by] = item.btn.get_transformed_position();
-                if (px >= bx && px <= bx + item.btn.width &&
-                    py >= by && py <= by + item.btn.height) {
+                if (over(item.btn)) {
                     this._toggleStack(item.stack, item.btn); // close current, open this
+                    return Clutter.EVENT_STOP;
+                }
+            }
+            // Over a favorite / app icon → just close the fan.
+            for (const item of (this._appButtonList || [])) {
+                if (over(item.btn)) {
+                    this._closeStack();
                     return Clutter.EVENT_STOP;
                 }
             }
