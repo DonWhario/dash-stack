@@ -707,6 +707,9 @@ export default class DockStacksExtension extends Extension {
                     return;
                 }
                 const holder = inst.actor;
+                // Drag to move, like favorites/stacks. The drag only begins past
+                // a movement threshold, so the widget's own buttons still click.
+                this._makeReorderable(holder, 'pinned', index, {token: entry.token});
                 this._attachContextMenu(holder, () => ([
                     {label: _('Editar en preferencias…'), callback: () => this.openPreferences()},
                     {separator: true},
@@ -925,6 +928,10 @@ export default class DockStacksExtension extends Extension {
         if (this._widgetInstances) {
             for (const w of this._widgetInstances) {
                 try { w.destroy(); } catch (_e) { /* already gone */ }
+                // Destroy the actor too: after a drag-reorder DND may have
+                // reparented it out of the dock, so destroy_all_children alone
+                // would leave it orphaned.
+                try { w.actor?.destroy(); } catch (_e) { /* already gone */ }
             }
         }
         this._widgetInstances = [];
