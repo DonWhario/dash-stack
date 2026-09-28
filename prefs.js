@@ -32,6 +32,19 @@ function writeStacks(settings, stacks) {
     settings.set_string('stacks', JSON.stringify(stacks));
 }
 
+function readWidgets(settings) {
+    try {
+        const v = JSON.parse(settings.get_string('widgets'));
+        return Array.isArray(v) ? v : [];
+    } catch (_e) {
+        return [];
+    }
+}
+
+function writeWidgets(settings, widgets) {
+    settings.set_string('widgets', JSON.stringify(widgets));
+}
+
 export default class DockStacksPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const settings = this.getSettings();
@@ -47,6 +60,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             this._prefPages = [];
             this._buildGeneralPage(window, settings);
             this._buildStacksPage(window, settings);
+            this._buildWidgetsPage(window, settings);
             this._buildAboutPage(window);
         };
         build();
@@ -674,6 +688,158 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         actionGroup.add(addAppsRow);
 
         this._refreshStackList();
+    }
+
+    // --------------------------------------------------------- Widgets page
+    _buildWidgetsPage(window, settings) {
+        const page = new Adw.PreferencesPage({
+            title: _('Widgets'),
+            icon_name: 'view-dual-symbolic',
+        });
+        window.add(page);
+        if (this._prefPages) this._prefPages.push(page);
+
+        const listGroup = new Adw.PreferencesGroup({
+            title: _('Widgets del dock'),
+            description: _('Tarjetas que se muestran en la barra: reproducción, clima, sistema o un script propio.'),
+        });
+        page.add(listGroup);
+        this._widgetListGroup = listGroup;
+        this._settings = settings;
+
+        const actionGroup = new Adw.PreferencesGroup();
+        page.add(actionGroup);
+        const addRow = (title, subtitle, icon, type) => {
+            const row = new Adw.ActionRow({title, subtitle, activatable: true});
+            row.add_suffix(new Gtk.Image({icon_name: icon}));
+            row.connect('activated', () => this._addWidget(type));
+            actionGroup.add(row);
+        };
+        addRow(_('Añadir: Reproduciendo ahora'), _('Controles de música/vídeo (MPRIS)'), 'audio-x-generic-symbolic', 'mpris');
+        addRow(_('Añadir: Clima'), _('Ubicación, temperatura y condición'), 'weather-clear-symbolic', 'weather');
+        addRow(_('Añadir: Sistema / reloj'), _('Reloj, CPU, RAM y batería'), 'utilities-system-monitor-symbolic', 'system');
+        addRow(_('Añadir: Script'), _('Muestra la salida de un comando tuyo'), 'utilities-terminal-symbolic', 'script');
+
+        this._refreshWidgetList();
+    }
+
+    _widgetTypeName(type) {
+        switch (type) {
+        case 'mpris': return _('Reproduciendo ahora');
+        case 'weather': return _('Clima');
+        case 'system': return _('Sistema / reloj');
+        case 'script': return _('Script');
+        default: return _('Widget');
+        }
+    }
+
+    _refreshWidgetList() {
+        if (this._widgetRows) {
+            for (const r of this._widgetRows)
+                this._widgetListGroup.remove(r);
+        }
+        this._widgetRows = [];
+
+        const widgets = readWidgets(this._settings);
+        if (widgets.length === 0) {
+            const empty = new Adw.ActionRow({
+                title: _('Aún no hay widgets'),
+                subtitle: _('Usa los botones de abajo para añadir uno'),
+            });
+            this._widgetListGroup.add(empty);
+            this._widgetRows.push(empty);
+            return;
+        }
+        for (const w of widgets) {
+            const row = this._buildWidgetRow(w);
+            this._widgetListGroup.add(row);
+            this._widgetRows.push(row);
+        }
+    }
+
+    _buildWidgetRow(w) {
+        const exp = new Adw.ExpanderRow({title: this._widgetTypeName(w.type)});
+        const remove = new Gtk.Button({
+            icon_name: 'user-trash-symbolic',
+            valign: Gtk.Align.CENTER,
+            css_classes: ['flat'],
+        });
+        remove.connect('clicked', () => this._removeWidgetPref(w.id));
+        exp.add_suffix(remove);
+
+        if (w.type === 'weather') {
+            const loc = new Adw.EntryRow({title: _('Ubicación')});
+            loc.set_text(w.location || '');
+            loc.connect('apply', () => this._updateWidget(w.id, {location: loc.get_text()}));
+            exp.add_row(loc);
+        } else if (w.type === 'script') {
+            const cmd = new Adw.EntryRow({title: _('Comando')});
+            cmd.set_text(w.command || '');
+            cmd.connect('apply', () => this._updateWidget(w.id, {command: cmd.get_text()}));
+            exp.add_row(cmd);
+            const lbl = new Adw.EntryRow({title: _('Etiqueta (opcional)')});
+            lbl.set_text(w.label || '');
+            lbl.connect('apply', () => this._updateWidget(w.id, {label: lbl.get_text()}));
+            exp.add_row(lbl);
+            const iv = new Adw.SpinRow({
+                title: _('Intervalo (s)'),
+                adjustment: new Gtk.Adjustment({lower: 1, upper: 3600, step_increment: 1, value: w.interval || 10}),
+            });
+            iv.connect('notify::value', () => this._updateWidget(w.id, {interval: Math.round(iv.get_value())}));
+            exp.add_row(iv);
+            const wd = new Adw.SpinRow({
+                title: _('Ancho (px)'),
+                adjustment: new Gtk.Adjustment({lower: 80, upper: 500, step_increment: 10, value: w.width || 180}),
+            });
+            wd.connect('notify::value', () => this._updateWidget(w.id, {width: Math.round(wd.get_value())}));
+            exp.add_row(wd);
+        } else if (w.type === 'system') {
+            const fields = Object.assign({clock: true, cpu: true, ram: true, battery: true}, w.fields || {});
+            const mk = (key, title) => {
+                const sw = new Adw.SwitchRow({title, active: !!fields[key]});
+                sw.connect('notify::active', () => {
+                    fields[key] = sw.get_active();
+                    this._updateWidget(w.id, {fields: Object.assign({}, fields)});
+                });
+                exp.add_row(sw);
+            };
+            mk('clock', _('Reloj'));
+            mk('cpu', _('CPU'));
+            mk('ram', _('RAM'));
+            mk('battery', _('Batería'));
+        } else {
+            exp.add_row(new Adw.ActionRow({subtitle: _('Sin ajustes. Controla el reproductor activo.')}));
+        }
+        return exp;
+    }
+
+    _addWidget(type) {
+        const widgets = readWidgets(this._settings);
+        const w = {id: uuidv4(), type};
+        if (type === 'weather')
+            w.location = '';
+        else if (type === 'script')
+            Object.assign(w, {command: '', label: '', interval: 10, width: 180});
+        else if (type === 'system')
+            w.fields = {clock: true, cpu: true, ram: true, battery: true};
+        widgets.push(w);
+        writeWidgets(this._settings, widgets);
+        this._refreshWidgetList();
+    }
+
+    _updateWidget(id, patch) {
+        const widgets = readWidgets(this._settings);
+        const w = widgets.find(x => x.id === id);
+        if (!w)
+            return;
+        Object.assign(w, patch);
+        writeWidgets(this._settings, widgets);
+    }
+
+    _removeWidgetPref(id) {
+        const widgets = readWidgets(this._settings).filter(w => w.id !== id);
+        writeWidgets(this._settings, widgets);
+        this._refreshWidgetList();
     }
 
     _refreshStackList() {

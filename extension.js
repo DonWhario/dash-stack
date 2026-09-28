@@ -18,6 +18,7 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import {SysTrayManager} from './systray.js';
 import {makeTranslator} from './translations.js';
+import {makeWidget} from './widgets.js';
 
 // Module-level translator; (re)configured in enable() and when the
 // 'language' key changes. Identity (Spanish) until configured.
@@ -34,6 +35,9 @@ function safeParseStacks(str) {
         return [];
     }
 }
+
+// Widgets share the same JSON-array shape as stacks.
+const safeParseWidgets = safeParseStacks;
 
 function iconForGicon(gicon, size) {
     return new St.Icon({gicon, icon_size: size});
@@ -140,6 +144,7 @@ export default class DockStacksExtension extends Extension {
         this._stackPopup = null;
         this._stackGrab = null;
         this._hoverOpenTimeout = 0;
+        this._widgetInstances = [];
         this._relayoutId = 0;
         this._winSignals = [];   // [ [app, handlerId], ... ]
         this._dragActive = false;
@@ -156,11 +161,11 @@ export default class DockStacksExtension extends Extension {
 
         // React to settings changes
         this._settingsChangedId = this._settings.connect('changed', (_s, key) => {
-            if (key === 'stacks' || key === 'show-favorites' || key === 'icon-size' ||
-                key === 'show-apps-button' || key === 'apps-button-icon' ||
-                key === 'apps-button-position' || key === 'show-running' ||
-                key === 'running-indicators' || key === 'window-previews' ||
-                key === 'dock-order')
+            if (key === 'stacks' || key === 'widgets' || key === 'show-favorites' ||
+                key === 'icon-size' || key === 'show-apps-button' ||
+                key === 'apps-button-icon' || key === 'apps-button-position' ||
+                key === 'show-running' || key === 'running-indicators' ||
+                key === 'window-previews' || key === 'dock-order')
                 this._rebuildItems();
             else if (key === 'language') {
                 // Rebuild the translator and refresh texts (dock and grid).
@@ -325,6 +330,7 @@ export default class DockStacksExtension extends Extension {
         this._destroyPreview();
         this._hideTooltip();
         this._cancelHoverOpen();
+        this._destroyWidgets();
         this._closeAppGrid();
         if (this._geomIdle) {
             GLib.source_remove(this._geomIdle);
@@ -637,9 +643,11 @@ export default class DockStacksExtension extends Extension {
         for (const child of this._dock.get_children())
             child.reactive = false;
         this._cancelHoverOpen();    // drop any pending hover-open for old buttons
+        this._destroyWidgets();     // stop widget timers/D-Bus before removing them
         this._dock.destroy_all_children();
         this._appButtonList = [];   // {app, btn} for minimize geometry
         this._stackButtons = [];    // {stack, btn} for hover-to-switch stacks
+        this._widgetInstances = []; // [{actor, destroy}] active dock widgets
         const iconSize = this._settings.get_int('icon-size');
 
         const showRunning = this._settings.get_boolean('show-running');
@@ -689,6 +697,24 @@ export default class DockStacksExtension extends Extension {
                         this._attachWindowPreview(btn, app);
                     this._watchApp(app);
                 }
+            } else if (entry.kind === 'widget') {
+                const widget = entry.widget;
+                let inst;
+                try {
+                    inst = makeWidget(widget, iconSize, _);
+                } catch (e) {
+                    logError(e, 'Dock Stack: widget failed');
+                    return;
+                }
+                const holder = inst.actor;
+                this._attachContextMenu(holder, () => ([
+                    {label: _('Editar en preferencias…'), callback: () => this.openPreferences()},
+                    {separator: true},
+                    {label: _('Eliminar del dock'), callback: () =>
+                        this._deferred(() => this._removeWidget(widget.id))},
+                ]));
+                this._dock.add_child(holder);
+                this._widgetInstances.push(inst);
             } else {
                 const stack = entry.stack;
                 const icon = this._stackIcon(stack, iconSize);
@@ -887,6 +913,21 @@ export default class DockStacksExtension extends Extension {
         const stacks = safeParseStacks(this._settings.get_string('stacks'))
             .filter(s => s.id !== stackId);
         this._settings.set_string('stacks', JSON.stringify(stacks));
+    }
+
+    _removeWidget(widgetId) {
+        const widgets = safeParseWidgets(this._settings.get_string('widgets'))
+            .filter(w => w.id !== widgetId);
+        this._settings.set_string('widgets', JSON.stringify(widgets));
+    }
+
+    _destroyWidgets() {
+        if (this._widgetInstances) {
+            for (const w of this._widgetInstances) {
+                try { w.destroy(); } catch (_e) { /* already gone */ }
+            }
+        }
+        this._widgetInstances = [];
     }
 
     // ----------------------------------------------- window thumbnails
@@ -1892,6 +1933,9 @@ export default class DockStacksExtension extends Extension {
         const stacks = safeParseStacks(this._settings.get_string('stacks'));
         const stackById = new Map(stacks.map(s => [s.id, s]));
 
+        const widgets = safeParseWidgets(this._settings.get_string('widgets'));
+        const widgetById = new Map(widgets.map(w => [w.id, w]));
+
         let saved = [];
         try {
             const parsed = JSON.parse(this._settings.get_string('dock-order'));
@@ -1902,6 +1946,7 @@ export default class DockStacksExtension extends Extension {
         const entries = [];
         const usedFav = new Set();
         const usedStack = new Set();
+        const usedWidget = new Set();
         for (const tok of saved) {
             if (typeof tok !== 'string')
                 continue;
@@ -1917,6 +1962,12 @@ export default class DockStacksExtension extends Extension {
                     entries.push({kind: 'stack', token: tok, stack: stackById.get(sid)});
                     usedStack.add(sid);
                 }
+            } else if (tok.startsWith('widget:')) {
+                const wid = tok.slice(7);
+                if (widgetById.has(wid) && !usedWidget.has(wid)) {
+                    entries.push({kind: 'widget', token: tok, widget: widgetById.get(wid)});
+                    usedWidget.add(wid);
+                }
             }
         }
         // New favorites (in their natural order) not yet included
@@ -1928,6 +1979,11 @@ export default class DockStacksExtension extends Extension {
         for (const s of stacks) {
             if (!usedStack.has(s.id))
                 entries.push({kind: 'stack', token: `stack:${s.id}`, stack: s});
+        }
+        // New widgets not yet included
+        for (const w of widgets) {
+            if (!usedWidget.has(w.id))
+                entries.push({kind: 'widget', token: `widget:${w.id}`, widget: w});
         }
         return entries;
     }

@@ -118,6 +118,12 @@
       <description>Lista JSON de stacks. Cada stack: {id,name,type:'folder'|'apps',path,style:'grid'|'fan',apps:[desktopId]}</description>
     </key>
 
+    <key name="widgets" type="s">
+      <default>"[]"</default>
+      <summary>Definición de widgets del dock (JSON)</summary>
+      <description>Lista JSON de widgets. Cada widget: {id,type:'mpris'|'weather'|'system'|'script', location?, command?, label?, interval?, width?, fields?:{clock,cpu,ram,battery}}. Se colocan en el dock según el orden de "dock-order" con el token "widget:&lt;id&gt;".</description>
+    </key>
+
     <key name="dock-order" type="s">
       <default>"[]"</default>
       <summary>Orden unificado de elementos anclados (favoritos y stacks mezclados)</summary>
