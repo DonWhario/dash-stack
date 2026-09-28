@@ -295,6 +295,7 @@ function makeWeather(spec, iconSize, _, lang) {
 
     const session = new Soup.Session();
     let timer = 0;
+    let lastBg = '';   // current background URI, to avoid reloading it on refresh
 
     const fetch = () => {
         // With a location, use it; empty → wttr.in auto-detects it from the
@@ -326,11 +327,17 @@ function makeWeather(spec, iconSize, _, lang) {
                 icon.icon_name = weatherIcon(cur.weatherCode);
                 if (data.nearest_area && data.nearest_area[0])
                     title.text = data.nearest_area[0].areaName[0].value;
-                // Condition background image behind the card content.
+                // Condition background image behind the card content. Only
+                // re-apply it when the condition (image) actually changes, so a
+                // periodic refresh with the same weather doesn't reload the
+                // texture and flicker.
                 const bg = weatherBgUri(cur.weatherCode);
-                box.set_style(
-                    `background-image: url("${bg}"); background-size: cover; ` +
-                    'background-position: center;');
+                if (bg !== lastBg) {
+                    lastBg = bg;
+                    box.set_style(
+                        `background-image: url("${bg}"); background-size: cover; ` +
+                        'background-position: center;');
+                }
             } catch (_e) {
                 sub.text = _('sin datos');
             }
