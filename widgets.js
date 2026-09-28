@@ -221,8 +221,17 @@ function makeMpris(spec, iconSize, _) {
 }
 
 // ------------------------------------------------------------------- Weather
-// Folder with the user's weather background images.
-const WEATHER_BG_DIR = '/home/fabarcad/Imágenes/Capturas de pantalla';
+// Bundled weather background images, resolved relative to this module so the
+// extension is self-contained (…/dock-stack@felipe.local/data/).
+function moduleDir() {
+    try {
+        const [file] = GLib.filename_from_uri(import.meta.url);
+        return GLib.path_get_dirname(file);
+    } catch (_e) {
+        return '.';
+    }
+}
+const WEATHER_BG_DIR = GLib.build_filenamev([moduleDir(), 'data']);
 
 // Maps a wttr.in weather code to a coarse condition category.
 function weatherCategory(code) {
