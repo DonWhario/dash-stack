@@ -772,10 +772,26 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         if (w.type === 'weather') {
             const loc = new Adw.EntryRow({title: _('Ubicación (vacío = automática)')});
             loc.set_text(w.location || '');
-            loc.connect('apply', () => this._updateWidget(w.id, {location: loc.get_text().trim()}));
+            // Save automatically as you type (debounced), so you don't need to
+            // press Enter; also save immediately on Enter/apply.
+            let saveId = 0;
+            const save = () => this._updateWidget(w.id, {location: loc.get_text().trim()});
+            loc.connect('changed', () => {
+                if (saveId)
+                    GLib.source_remove(saveId);
+                saveId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 700, () => {
+                    saveId = 0;
+                    save();
+                    return GLib.SOURCE_REMOVE;
+                });
+            });
+            loc.connect('apply', () => {
+                if (saveId) { GLib.source_remove(saveId); saveId = 0; }
+                save();
+            });
             exp.add_row(loc);
             exp.add_row(new Adw.ActionRow({
-                subtitle: _('Escribe una ciudad y confirma (↵). Si lo dejas vacío, se detecta por tu conexión.'),
+                subtitle: _('Incluye el país, p. ej. «Santiago, Chile». Si lo dejas vacío, se detecta por tu conexión.'),
             }));
         } else if (w.type === 'script') {
             const cmd = new Adw.EntryRow({title: _('Comando')});
