@@ -17,7 +17,7 @@ import * as DND from 'resource:///org/gnome/shell/ui/dnd.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import {SysTrayManager} from './systray.js';
-import {makeTranslator} from './translations.js';
+import {makeTranslator, resolveLanguage} from './translations.js';
 import {makeWidget} from './widgets.js';
 
 // Module-level translator; (re)configured in enable() and when the
@@ -701,7 +701,7 @@ export default class DockStacksExtension extends Extension {
                 const widget = entry.widget;
                 let inst;
                 try {
-                    inst = makeWidget(widget, iconSize, _);
+                    inst = makeWidget(widget, iconSize, _, resolveLanguage(this._settings));
                 } catch (e) {
                     logError(e, 'Dock Stack: widget failed');
                     return;

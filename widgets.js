@@ -45,10 +45,10 @@ function textColumn(titleText, subText) {
     return {col, title, sub};
 }
 
-export function makeWidget(spec, iconSize, _) {
+export function makeWidget(spec, iconSize, _, lang) {
     switch (spec && spec.type) {
     case 'mpris': return makeMpris(spec, iconSize, _);
-    case 'weather': return makeWeather(spec, iconSize, _);
+    case 'weather': return makeWeather(spec, iconSize, _, lang);
     case 'system': return makeSystem(spec, iconSize, _);
     case 'clock': return makeClock(spec, iconSize, _);
     case 'script': return makeScript(spec, iconSize, _);
@@ -276,7 +276,7 @@ function weatherBgUri(code) {
     return Gio.File.new_for_path(`${WEATHER_BG_DIR}/${name}`).get_uri();
 }
 
-function makeWeather(spec, iconSize, _) {
+function makeWeather(spec, iconSize, _, lang) {
     const box = card('dock-widget-weather');
     const icon = new St.Icon({
         style_class: 'dock-widget-art',
@@ -289,15 +289,22 @@ function makeWeather(spec, iconSize, _) {
     box.add_child(icon);
     box.add_child(col);
 
+    // wttr.in returns the description in English by default; request it in the
+    // extension's language and read the translated `lang_<code>` field.
+    const langCode = lang && lang !== 'en' ? lang : '';
+
     const session = new Soup.Session();
     let timer = 0;
 
     const fetch = () => {
         // With a location, use it; empty → wttr.in auto-detects it from the
         // connection (IP), so the widget also works without typing a city.
-        const url = loc
-            ? `https://wttr.in/${encodeURIComponent(loc)}?format=j1`
-            : 'https://wttr.in/?format=j1';
+        const base = loc
+            ? `https://wttr.in/${encodeURIComponent(loc)}`
+            : 'https://wttr.in/';
+        const url = langCode
+            ? `${base}?format=j1&lang=${langCode}`
+            : `${base}?format=j1`;
         let msg;
         try {
             msg = Soup.Message.new('GET', url);
@@ -310,7 +317,11 @@ function makeWeather(spec, iconSize, _) {
                 const bytes = session.send_and_read_finish(res);
                 const data = JSON.parse(new TextDecoder().decode(bytes.get_data()));
                 const cur = data.current_condition[0];
-                const desc = cur.weatherDesc && cur.weatherDesc[0] ? cur.weatherDesc[0].value : '';
+                const translated = langCode && cur['lang_' + langCode] && cur['lang_' + langCode][0]
+                    ? cur['lang_' + langCode][0].value
+                    : null;
+                const desc = translated ||
+                    (cur.weatherDesc && cur.weatherDesc[0] ? cur.weatherDesc[0].value : '');
                 sub.text = `${cur.temp_C}°C · ${desc}`;
                 icon.icon_name = weatherIcon(cur.weatherCode);
                 if (data.nearest_area && data.nearest_area[0])
