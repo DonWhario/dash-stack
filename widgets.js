@@ -19,6 +19,9 @@ import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
 import Soup from 'gi://Soup';
+import Shell from 'gi://Shell';
+
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 const CENTER = Clutter.ActorAlign.CENTER;
 
@@ -298,6 +301,110 @@ function weatherBgUri(code) {
     return dataUri(name);
 }
 
+// Icon for an open-meteo WMO weather code (used in the 5-day forecast).
+function wmoIcon(code) {
+    const c = Number(code);
+    if ([95, 96, 99].includes(c)) return 'weather-storm-symbolic';
+    if ([71, 73, 75, 77, 85, 86].includes(c)) return 'weather-snow-symbolic';
+    if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(c))
+        return 'weather-showers-symbolic';
+    if ([45, 48].includes(c)) return 'weather-fog-symbolic';
+    if (c === 3) return 'weather-overcast-symbolic';
+    if ([1, 2].includes(c)) return 'weather-few-clouds-symbolic';
+    return 'weather-clear-symbolic';
+}
+
+// Shows `content` centered in a modal overlay (click outside / Escape closes).
+function showPopup(content) {
+    const overlay = new St.Widget({
+        reactive: true, x: 0, y: 0,
+        width: global.stage.width, height: global.stage.height,
+    });
+    const bg = new St.Widget({
+        reactive: true, x: 0, y: 0,
+        width: global.stage.width, height: global.stage.height,
+    });
+    let grab = null;
+    const close = () => {
+        if (grab) { Main.popModal(grab); grab = null; }
+        overlay.destroy();
+    };
+    bg.connect('button-press-event', () => { close(); return Clutter.EVENT_STOP; });
+    overlay.add_child(bg);
+    overlay.connect('key-press-event', (_a, ev) => {
+        if (ev.get_key_symbol() === Clutter.KEY_Escape)
+            close();
+        return Clutter.EVENT_STOP;
+    });
+    Main.layoutManager.uiGroup.add_child(overlay);
+    grab = Main.pushModal(overlay, {actionMode: Shell.ActionMode.POPUP});
+    overlay.grab_key_focus();
+
+    overlay.add_child(content);
+    content.connect('button-press-event', () => Clutter.EVENT_STOP);
+    const monitor = Main.layoutManager.primaryMonitor;
+    const [, w] = content.get_preferred_width(-1);
+    const [, h] = content.get_preferred_height(w);
+    content.set_position(
+        Math.round(monitor.x + (monitor.width - w) / 2),
+        Math.round(monitor.y + (monitor.height - h) / 2));
+    return {close};
+}
+
+// 5-day forecast popup (open-meteo) for the given coordinates.
+function openForecast(lat, lon, name, _) {
+    const container = new St.BoxLayout({style_class: 'dock-forecast', vertical: true});
+    const header = new St.Label({style_class: 'dock-forecast-title', text: name || _('Clima')});
+    container.add_child(header);
+    const rows = new St.BoxLayout({style_class: 'dock-forecast-rows', vertical: true});
+    container.add_child(rows);
+    showPopup(container);
+
+    if (lat == null || lon == null) {
+        rows.add_child(new St.Label({style_class: 'dock-forecast-day', text: _('sin datos')}));
+        return;
+    }
+
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+        '&daily=weathercode,temperature_2m_max,temperature_2m_min&forecast_days=5&timezone=auto';
+    const session = new Soup.Session();
+    let msg;
+    try {
+        msg = Soup.Message.new('GET', url);
+    } catch (_e) {
+        rows.add_child(new St.Label({style_class: 'dock-forecast-day', text: _('sin datos')}));
+        return;
+    }
+    session.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null, (s, res) => {
+        try {
+            const bytes = session.send_and_read_finish(res);
+            const d = JSON.parse(new TextDecoder().decode(bytes.get_data())).daily;
+            for (let i = 0; i < d.time.length; i++) {
+                const [y, m, dd] = d.time[i].split('-').map(Number);
+                const dt = GLib.DateTime.new_local(y, m, dd, 12, 0, 0);
+                const row = new St.BoxLayout({style_class: 'dock-forecast-row'});
+                const day = new St.Label({
+                    style_class: 'dock-forecast-day',
+                    text: i === 0 ? _('Hoy') : dt.format('%a %d'),
+                    x_expand: true,
+                    x_align: Clutter.ActorAlign.START,
+                });
+                const ic = new St.Icon({icon_name: wmoIcon(d.weathercode[i]), icon_size: 22});
+                const temp = new St.Label({
+                    style_class: 'dock-forecast-temp',
+                    text: `${Math.round(d.temperature_2m_max[i])}° / ${Math.round(d.temperature_2m_min[i])}°`,
+                });
+                row.add_child(day);
+                row.add_child(ic);
+                row.add_child(temp);
+                rows.add_child(row);
+            }
+        } catch (_e) {
+            rows.add_child(new St.Label({style_class: 'dock-forecast-day', text: _('sin datos')}));
+        }
+    });
+}
+
 function makeWeather(spec, iconSize, _, lang, hooks) {
     const box = card('dock-widget-weather');
     const icon = new St.Icon({
@@ -310,6 +417,17 @@ function makeWeather(spec, iconSize, _, lang, hooks) {
     setFlexWidth(col, 150);
     box.add_child(icon);
     box.add_child(col);
+
+    // Double-click → 5-day forecast (uses coordinates from the last fetch).
+    let lat = null;
+    let lon = null;
+    box.connect('button-press-event', (_a, ev) => {
+        if (ev.get_button() === 1 && ev.get_click_count() === 2) {
+            openForecast(lat, lon, title.text, _);
+            return Clutter.EVENT_STOP;
+        }
+        return Clutter.EVENT_PROPAGATE;
+    });
 
     const setBg = (uri) => box.set_style(
         `background-image: url("${uri}"); background-size: cover; background-position: center;`);
@@ -358,8 +476,12 @@ function makeWeather(spec, iconSize, _, lang, hooks) {
                     (cur.weatherDesc && cur.weatherDesc[0] ? cur.weatherDesc[0].value : '');
                 sub.text = `${cur.temp_C}°C · ${desc}`;
                 icon.icon_name = weatherIcon(cur.weatherCode);
-                if (data.nearest_area && data.nearest_area[0])
-                    title.text = data.nearest_area[0].areaName[0].value;
+                if (data.nearest_area && data.nearest_area[0]) {
+                    const na = data.nearest_area[0];
+                    title.text = na.areaName[0].value;
+                    lat = na.latitude;
+                    lon = na.longitude;
+                }
                 // Condition background image behind the card content. Only
                 // re-apply it when the condition (image) actually changes, so a
                 // periodic refresh with the same weather doesn't reload the
@@ -510,6 +632,17 @@ function makeClock(spec, iconSize, _) {
     info.add_child(big);
     info.add_child(sub);
     box.add_child(info);
+
+    // Double-click → open the system calendar (GNOME date menu).
+    box.connect('button-press-event', (_a, ev) => {
+        if (ev.get_button() === 1 && ev.get_click_count() === 2) {
+            try {
+                Main.panel.statusArea.dateMenu.menu.open();
+            } catch (_e) { /* date menu unavailable */ }
+            return Clutter.EVENT_STOP;
+        }
+        return Clutter.EVENT_PROPAGATE;
+    });
 
     const fmt24 = spec.format24 !== false;   // default 24h
     const showDate = spec.showDate !== false; // default show date
