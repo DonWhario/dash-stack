@@ -918,7 +918,7 @@ export default class DockStacksExtension extends Extension {
     }
 
     // ------------------------------------------------------ tooltips (name)
-    _attachTooltip(btn, text) {
+    _attachTooltip(btn, text, side = null) {
         if (!text)
             return;
         btn.connect('enter-event', () => {
@@ -927,7 +927,7 @@ export default class DockStacksExtension extends Extension {
             this._cancelTooltip();
             this._tooltipTimeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => {
                 this._tooltipTimeout = 0;
-                this._showTooltip(btn, text);
+                this._showTooltip(btn, text, side);
                 return GLib.SOURCE_REMOVE;
             });
             return Clutter.EVENT_PROPAGATE;
@@ -956,7 +956,7 @@ export default class DockStacksExtension extends Extension {
         }
     }
 
-    _showTooltip(btn, text) {
+    _showTooltip(btn, text, side = null) {
         if (!btn || !btn.get_stage())
             return; // the button no longer exists
         if (this._previewPopup)
@@ -971,7 +971,9 @@ export default class DockStacksExtension extends Extension {
         const [, natW] = tip.get_preferred_width(-1);
         const [, natH] = tip.get_preferred_height(natW);
         const monitor = Main.layoutManager.primaryMonitor;
-        const pos = this._settings.get_string('position');
+        // `side` overrides the dock-position logic (used by the fan cells, which
+        // live in an overlay and want the full name shown beside the card).
+        const pos = side || this._settings.get_string('position');
         let px, py;
         if (pos === 'left') {
             px = bx + bw + 8;
@@ -2020,6 +2022,7 @@ export default class DockStacksExtension extends Extension {
         // would turn the fan into a long diagonal staircase with long names).
         const RPAD = 6;                 // cell right padding (CSS)
         const fanW = Math.round(iconSize * 4);
+        const firstGap = 8;             // gap between the dock and the first card
 
         ordered.forEach((entry, i) => {
             const cell = this._makeFanCell(entry, iconSize, () => {
@@ -2038,16 +2041,25 @@ export default class DockStacksExtension extends Extension {
             });
             overlay.add_child(cell);
 
-            if (useTilt)
+            if (useTilt) {
                 cell.set_width(fanW);
+                // Names are ellipsized to the uniform width, so reveal the full
+                // one on hover (shown to the right of the card).
+                this._attachTooltip(cell, entry.name, 'left');
+            }
             const cw = useTilt ? fanW : cell.get_preferred_width(-1)[1];
             const [, ch] = cell.get_preferred_height(cw);
 
             let tx, ty;
             if (useTilt) {
-                // Uniform, centered cards; tilt opens the fan.
+                // Uniform, centered cards; tilt opens the fan. The first card
+                // sits `firstGap` from the dock (not a full step) so the fan
+                // hugs the bar instead of floating away from it.
+                const base = goingUp
+                    ? startY - firstGap - i * step
+                    : startY + firstGap + i * step;
                 tx = centerX - cw / 2;
-                ty = (goingUp ? startY - (i + 1) * step : startY + (i + 1) * step) - ch;
+                ty = base - ch;
             } else {
                 // macOS-style semi-curved strip: the ICON COLUMN follows the
                 // arc. The icon is anchored by the right edge so all icons stay
@@ -2183,6 +2195,7 @@ export default class DockStacksExtension extends Extension {
     }
 
     _closeStack() {
+        this._hideTooltip();   // drop any pending/visible fan-cell tooltip
         if (this._stackGrab) {
             Main.popModal(this._stackGrab);
             this._stackGrab = null;
