@@ -707,21 +707,46 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         this._widgetListGroup = listGroup;
         this._settings = settings;
 
-        const actionGroup = new Adw.PreferencesGroup();
+        const actionGroup = new Adw.PreferencesGroup({title: _('Añadir widget')});
         page.add(actionGroup);
-        const addRow = (title, subtitle, icon, type) => {
+        this._widgetActionGroup = actionGroup;
+
+        this._refreshWidgetList();
+    }
+
+    // Rebuilds the "add widget" rows, showing only the types not already in the
+    // dock (each widget type can be added once).
+    _refreshAddRows() {
+        if (this._addRows) {
+            for (const r of this._addRows)
+                this._widgetActionGroup.remove(r);
+        }
+        this._addRows = [];
+
+        const present = new Set(readWidgets(this._settings).map(w => w.type));
+        const specs = [
+            ['mpris', _('Añadir: Reproduciendo ahora'), _('Controles de música/vídeo (MPRIS)'), 'audio-x-generic-symbolic'],
+            ['weather', _('Añadir: Clima'), _('Temperatura y condición (automático)'), 'weather-clear-symbolic'],
+            ['system', _('Añadir: Sistema'), _('CPU, RAM y batería con mini gráfico'), 'utilities-system-monitor-symbolic'],
+            ['clock', _('Añadir: Reloj'), _('Hora y fecha'), 'preferences-system-time-symbolic'],
+            ['script', _('Añadir: Script'), _('Muestra la salida de un comando tuyo'), 'utilities-terminal-symbolic'],
+        ];
+        let shown = 0;
+        for (const [type, title, subtitle, icon] of specs) {
+            if (present.has(type))
+                continue;
             const row = new Adw.ActionRow({title, subtitle, activatable: true});
             row.add_suffix(new Gtk.Image({icon_name: icon}));
             row.connect('activated', () => this._addWidget(type));
-            actionGroup.add(row);
-        };
-        addRow(_('Añadir: Reproduciendo ahora'), _('Controles de música/vídeo (MPRIS)'), 'audio-x-generic-symbolic', 'mpris');
-        addRow(_('Añadir: Clima'), _('Temperatura y condición (automático)'), 'weather-clear-symbolic', 'weather');
-        addRow(_('Añadir: Sistema'), _('CPU, RAM y batería con mini gráfico'), 'utilities-system-monitor-symbolic', 'system');
-        addRow(_('Añadir: Reloj'), _('Hora y fecha'), 'preferences-system-time-symbolic', 'clock');
-        addRow(_('Añadir: Script'), _('Muestra la salida de un comando tuyo'), 'utilities-terminal-symbolic', 'script');
-
-        this._refreshWidgetList();
+            this._widgetActionGroup.add(row);
+            this._addRows.push(row);
+            shown++;
+        }
+        if (shown === 0) {
+            const done = new Adw.ActionRow({title: _('Todos los widgets ya están en el dock')});
+            this._widgetActionGroup.add(done);
+            this._addRows.push(done);
+        }
     }
 
     _widgetTypeName(type) {
@@ -750,13 +775,14 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             });
             this._widgetListGroup.add(empty);
             this._widgetRows.push(empty);
-            return;
+        } else {
+            for (const w of widgets) {
+                const row = this._buildWidgetRow(w);
+                this._widgetListGroup.add(row);
+                this._widgetRows.push(row);
+            }
         }
-        for (const w of widgets) {
-            const row = this._buildWidgetRow(w);
-            this._widgetListGroup.add(row);
-            this._widgetRows.push(row);
-        }
+        this._refreshAddRows();
     }
 
     _buildWidgetRow(w) {
