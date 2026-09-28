@@ -768,10 +768,9 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         exp.add_suffix(remove);
 
         if (w.type === 'weather') {
-            const loc = new Adw.EntryRow({title: _('Ubicación')});
-            loc.set_text(w.location || '');
-            loc.connect('apply', () => this._updateWidget(w.id, {location: loc.get_text()}));
-            exp.add_row(loc);
+            exp.add_row(new Adw.ActionRow({
+                subtitle: _('Ubicación automática, según tu conexión a internet.'),
+            }));
         } else if (w.type === 'script') {
             const cmd = new Adw.EntryRow({title: _('Comando')});
             cmd.set_text(w.command || '');
@@ -816,9 +815,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
     _addWidget(type) {
         const widgets = readWidgets(this._settings);
         const w = {id: uuidv4(), type};
-        if (type === 'weather')
-            w.location = '';
-        else if (type === 'script')
+        if (type === 'script')
             Object.assign(w, {command: '', label: '', interval: 10, width: 180});
         else if (type === 'system')
             w.fields = {clock: true, cpu: true, ram: true, battery: true};

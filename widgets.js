@@ -243,7 +243,7 @@ function makeWeather(spec, iconSize, _) {
         icon_name: 'weather-clear-symbolic',
         icon_size: iconSize,
     });
-    const {col, title, sub} = textColumn(spec.location || _('Clima'), '…');
+    const {col, title, sub} = textColumn(_('Clima'), '…');
     col.set_width(150);
     box.add_child(icon);
     box.add_child(col);
@@ -252,8 +252,9 @@ function makeWeather(spec, iconSize, _) {
     let timer = 0;
 
     const fetch = () => {
-        const loc = spec.location || '';
-        const url = `https://wttr.in/${encodeURIComponent(loc)}?format=j1`;
+        // No location given → wttr.in auto-detects it from the connection (IP),
+        // so the widget works automatically without the user typing a city.
+        const url = 'https://wttr.in/?format=j1';
         let msg;
         try {
             msg = Soup.Message.new('GET', url);
