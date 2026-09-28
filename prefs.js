@@ -827,7 +827,9 @@ export default class DockStacksPreferences extends ExtensionPreferences {
     _addWidget(type) {
         const widgets = readWidgets(this._settings);
         const w = {id: uuidv4(), type};
-        if (type === 'script')
+        if (type === 'weather')
+            w.location = 'Santiago, Chile';
+        else if (type === 'script')
             Object.assign(w, {command: '', label: '', interval: 10, width: 180});
         else if (type === 'system')
             w.fields = {cpu: true, ram: true, battery: true};
