@@ -636,6 +636,7 @@ export default class DockStacksExtension extends Extension {
             child.reactive = false;
         this._dock.destroy_all_children();
         this._appButtonList = [];   // {app, btn} for minimize geometry
+        this._stackButtons = [];    // {stack, btn} for hover-to-switch stacks
         const iconSize = this._settings.get_int('icon-size');
 
         const showRunning = this._settings.get_boolean('show-running');
@@ -699,6 +700,7 @@ export default class DockStacksExtension extends Extension {
                         this._deferred(() => this._removeStack(stack.id))},
                 ]));
                 this._dock.add_child(btn);
+                this._stackButtons.push({stack, btn});
             }
         });
 
@@ -1950,6 +1952,25 @@ export default class DockStacksExtension extends Extension {
         bg.connect('button-press-event', () => {
             this._closeStack();
             return Clutter.EVENT_STOP;
+        });
+        // Menu-like behavior: while a fan is open, moving the pointer over a
+        // DIFFERENT stack's dock button switches to it. The modal grab routes
+        // all motion to this background, so we hit-test the stack buttons here.
+        bg.connect('motion-event', (_a, ev) => {
+            const [px, py] = ev.get_coords();
+            for (const item of (this._stackButtons || [])) {
+                if (!item.btn || !item.btn.get_stage())
+                    continue;
+                if (item.stack.id === this._currentStackId)
+                    continue;
+                const [bx, by] = item.btn.get_transformed_position();
+                if (px >= bx && px <= bx + item.btn.width &&
+                    py >= by && py <= by + item.btn.height) {
+                    this._toggleStack(item.stack, item.btn); // close current, open this
+                    return Clutter.EVENT_STOP;
+                }
+            }
+            return Clutter.EVENT_PROPAGATE;
         });
         overlay.add_child(bg);
         overlay.connect('key-press-event', (_a, ev) => {
