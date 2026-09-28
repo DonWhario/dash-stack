@@ -45,10 +45,10 @@ function textColumn(titleText, subText) {
     return {col, title, sub};
 }
 
-export function makeWidget(spec, iconSize, _, lang) {
+export function makeWidget(spec, iconSize, _, lang, hooks) {
     switch (spec && spec.type) {
     case 'mpris': return makeMpris(spec, iconSize, _);
-    case 'weather': return makeWeather(spec, iconSize, _, lang);
+    case 'weather': return makeWeather(spec, iconSize, _, lang, hooks);
     case 'system': return makeSystem(spec, iconSize, _);
     case 'clock': return makeClock(spec, iconSize, _);
     case 'script': return makeScript(spec, iconSize, _);
@@ -276,7 +276,7 @@ function weatherBgUri(code) {
     return Gio.File.new_for_path(`${WEATHER_BG_DIR}/${name}`).get_uri();
 }
 
-function makeWeather(spec, iconSize, _, lang) {
+function makeWeather(spec, iconSize, _, lang, hooks) {
     const box = card('dock-widget-weather');
     const icon = new St.Icon({
         style_class: 'dock-widget-art',
@@ -289,12 +289,16 @@ function makeWeather(spec, iconSize, _, lang) {
     box.add_child(icon);
     box.add_child(col);
 
-    // Default background (sunny) shown immediately, so the card never appears
-    // without a background while the first fetch is in flight.
-    const defaultBg = Gio.File.new_for_path(`${WEATHER_BG_DIR}/soleado.png`).get_uri();
-    box.set_style(
-        `background-image: url("${defaultBg}"); background-size: cover; ` +
-        'background-position: center;');
+    const setBg = (uri) => box.set_style(
+        `background-image: url("${uri}"); background-size: cover; background-position: center;`);
+
+    // Initial background: the last one this widget showed (persisted), so a
+    // rebuild/relaunch keeps the previous look instead of flashing. Only the
+    // very first time ever it falls back to sunny.
+    const soleado = Gio.File.new_for_path(`${WEATHER_BG_DIR}/soleado.png`).get_uri();
+    const cachedBg = hooks && spec.id ? hooks.getBg(spec.id) : null;
+    const defaultBg = cachedBg || soleado;
+    setBg(defaultBg);
 
     // wttr.in returns the description in English by default; request it in the
     // extension's language and read the translated `lang_<code>` field.
@@ -337,13 +341,13 @@ function makeWeather(spec, iconSize, _, lang) {
                 // Condition background image behind the card content. Only
                 // re-apply it when the condition (image) actually changes, so a
                 // periodic refresh with the same weather doesn't reload the
-                // texture and flicker.
+                // texture and flicker; persist it as the widget's last look.
                 const bg = weatherBgUri(cur.weatherCode);
                 if (bg !== lastBg) {
                     lastBg = bg;
-                    box.set_style(
-                        `background-image: url("${bg}"); background-size: cover; ` +
-                        'background-position: center;');
+                    setBg(bg);
+                    if (hooks && spec.id)
+                        hooks.setBg(spec.id, bg);
                 }
             } catch (_e) {
                 sub.text = _('sin datos');

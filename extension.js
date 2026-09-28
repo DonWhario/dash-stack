@@ -145,6 +145,7 @@ export default class DockStacksExtension extends Extension {
         this._stackGrab = null;
         this._hoverOpenTimeout = 0;
         this._widgetInstances = [];
+        this._weatherCache = this._loadWeatherCache();
         this._relayoutId = 0;
         this._winSignals = [];   // [ [app, handlerId], ... ]
         this._dragActive = false;
@@ -701,7 +702,13 @@ export default class DockStacksExtension extends Extension {
                 const widget = entry.widget;
                 let inst;
                 try {
-                    inst = makeWidget(widget, iconSize, _, resolveLanguage(this._settings));
+                    inst = makeWidget(widget, iconSize, _, resolveLanguage(this._settings), {
+                        getBg: (id) => this._weatherCache[id],
+                        setBg: (id, uri) => {
+                            this._weatherCache[id] = uri;
+                            this._saveWeatherCache();
+                        },
+                    });
                 } catch (e) {
                     logError(e, 'Dock Stack: widget failed');
                     return;
@@ -922,6 +929,31 @@ export default class DockStacksExtension extends Extension {
         const widgets = safeParseWidgets(this._settings.get_string('widgets'))
             .filter(w => w.id !== widgetId);
         this._settings.set_string('widgets', JSON.stringify(widgets));
+    }
+
+    _weatherCachePath() {
+        return GLib.build_filenamev([GLib.get_user_cache_dir(), 'dock-stack', 'weather.json']);
+    }
+
+    _loadWeatherCache() {
+        try {
+            const [ok, bytes] = GLib.file_get_contents(this._weatherCachePath());
+            if (ok) {
+                const v = JSON.parse(new TextDecoder().decode(bytes));
+                if (v && typeof v === 'object')
+                    return v;
+            }
+        } catch (_e) { /* no cache yet */ }
+        return {};
+    }
+
+    _saveWeatherCache() {
+        try {
+            const dir = GLib.build_filenamev([GLib.get_user_cache_dir(), 'dock-stack']);
+            GLib.mkdir_with_parents(dir, 0o755);
+            GLib.file_set_contents(this._weatherCachePath(),
+                JSON.stringify(this._weatherCache || {}));
+        } catch (_e) { /* best effort */ }
     }
 
     _destroyWidgets() {
