@@ -521,3 +521,19 @@
     color: #ffffff;
     font-weight: bold;
 }
+
+/* Forecast popup over its background image: readable text/icons + sizing */
+.dock-forecast {
+    min-width: 300px;
+}
+
+.dock-forecast-title,
+.dock-forecast-day,
+.dock-forecast-temp {
+    color: #ffffff;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+.dock-forecast-icon {
+    icon-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}

@@ -337,8 +337,10 @@ function wmoIcon(code) {
     return 'weather-clear-symbolic';
 }
 
-// Shows `content` centered in a modal overlay (click outside / Escape closes).
-function showPopup(content) {
+// Shows `content` in a modal overlay (click outside / Escape closes). If
+// `sourceActor` is given, it is placed next to it (above the dock); otherwise
+// it is centered on the monitor.
+function showPopup(content, sourceActor) {
     const overlay = new St.Widget({
         reactive: true, x: 0, y: 0,
         width: global.stage.width, height: global.stage.height,
@@ -368,20 +370,35 @@ function showPopup(content) {
     const monitor = Main.layoutManager.primaryMonitor;
     const [, w] = content.get_preferred_width(-1);
     const [, h] = content.get_preferred_height(w);
-    content.set_position(
-        Math.round(monitor.x + (monitor.width - w) / 2),
-        Math.round(monitor.y + (monitor.height - h) / 2));
+    let px, py;
+    if (sourceActor && sourceActor.get_stage()) {
+        const [bx, by] = sourceActor.get_transformed_position();
+        px = bx + sourceActor.width / 2 - w / 2;   // centered over the widget
+        py = by - h - 8;                           // above it
+        if (py < monitor.y + 8)
+            py = by + sourceActor.height + 8;      // below if no room above
+    } else {
+        px = monitor.x + (monitor.width - w) / 2;
+        py = monitor.y + (monitor.height - h) / 2;
+    }
+    px = Math.max(monitor.x + 8, Math.min(px, monitor.x + monitor.width - w - 8));
+    py = Math.max(monitor.y + 8, Math.min(py, monitor.y + monitor.height - h - 8));
+    content.set_position(Math.round(px), Math.round(py));
     return {close};
 }
 
-// 5-day forecast popup (open-meteo) for the given coordinates.
-function openForecast(lat, lon, name, _) {
+// 5-day forecast popup (open-meteo) for the given coordinates, shown next to
+// the weather widget (sourceActor) with a background image.
+function openForecast(sourceActor, lat, lon, name, _) {
     const container = new St.BoxLayout({style_class: 'dock-forecast', vertical: true});
+    container.set_style(
+        `background-image: url("${dataUri('clima.png')}"); background-size: cover; ` +
+        'background-position: center;');
     const header = new St.Label({style_class: 'dock-forecast-title', text: name || _('Clima')});
     container.add_child(header);
     const rows = new St.BoxLayout({style_class: 'dock-forecast-rows', vertical: true});
     container.add_child(rows);
-    showPopup(container);
+    showPopup(container, sourceActor);
 
     if (lat == null || lon == null) {
         rows.add_child(new St.Label({style_class: 'dock-forecast-day', text: _('sin datos')}));
@@ -412,7 +429,11 @@ function openForecast(lat, lon, name, _) {
                     x_expand: true,
                     x_align: Clutter.ActorAlign.START,
                 });
-                const ic = new St.Icon({icon_name: wmoIcon(d.weathercode[i]), icon_size: 22});
+                const ic = new St.Icon({
+                    style_class: 'dock-forecast-icon',
+                    icon_name: wmoIcon(d.weathercode[i]),
+                    icon_size: 22,
+                });
                 const temp = new St.Label({
                     style_class: 'dock-forecast-temp',
                     text: `${Math.round(d.temperature_2m_max[i])}° / ${Math.round(d.temperature_2m_min[i])}°`,
@@ -530,7 +551,7 @@ function makeWeather(spec, iconSize, _, lang, hooks) {
     // Double-click → 5-day forecast (uses coordinates from the last fetch).
     let lat = null;
     let lon = null;
-    onDoubleClick(box, () => openForecast(lat, lon, title.text, _));
+    onDoubleClick(box, () => openForecast(box, lat, lon, title.text, _));
 
     const setBg = (uri) => box.set_style(
         `background-image: url("${uri}"); background-size: cover; background-position: center;`);
