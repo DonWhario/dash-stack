@@ -428,6 +428,92 @@ function openForecast(lat, lon, name, _) {
     });
 }
 
+// Own month calendar popup (double-click on the clock widget).
+function openCalendar() {
+    const now = GLib.DateTime.new_now_local();
+    let viewY = now.get_year();
+    let viewM = now.get_month();
+    const todayY = now.get_year();
+    const todayM = now.get_month();
+    const todayD = now.get_day_of_month();
+
+    const container = new St.BoxLayout({style_class: 'dock-calendar', vertical: true});
+    const head = new St.BoxLayout({style_class: 'dock-calendar-head'});
+    const prev = new St.Button({
+        style_class: 'dock-calendar-nav',
+        child: new St.Icon({icon_name: 'go-previous-symbolic', icon_size: 16}),
+    });
+    const titleL = new St.Label({
+        style_class: 'dock-calendar-title',
+        x_expand: true,
+        x_align: CENTER,
+        y_align: CENTER,
+    });
+    const next = new St.Button({
+        style_class: 'dock-calendar-nav',
+        child: new St.Icon({icon_name: 'go-next-symbolic', icon_size: 16}),
+    });
+    head.add_child(prev);
+    head.add_child(titleL);
+    head.add_child(next);
+    container.add_child(head);
+
+    const grid = new St.Widget({style_class: 'dock-calendar-grid'});
+    const gl = new Clutter.GridLayout();
+    gl.set_column_homogeneous(true);
+    gl.set_column_spacing(2);
+    gl.set_row_spacing(2);
+    grid.set_layout_manager(gl);
+    container.add_child(grid);
+
+    const render = () => {
+        grid.destroy_all_children();
+        const first = GLib.DateTime.new_local(viewY, viewM, 1, 12, 0, 0);
+        titleL.text = first.format('%B %Y');
+        // Weekday headers (Monday-first; 2024-01-01 was a Monday).
+        for (let i = 0; i < 7; i++) {
+            const d = GLib.DateTime.new_local(2024, 1, 1 + i, 12, 0, 0);
+            const l = new St.Label({
+                style_class: 'dock-calendar-wd',
+                text: d.format('%a'),
+                x_expand: true,
+                x_align: CENTER,
+            });
+            gl.attach(l, i, 0, 1, 1);
+        }
+        const startDow = first.get_day_of_week();   // 1=Mon .. 7=Sun
+        const daysInMonth = first.add_months(1).add_days(-1).get_day_of_month();
+        let col = startDow - 1;
+        let row = 1;
+        for (let day = 1; day <= daysInMonth; day++) {
+            const cell = new St.Label({
+                style_class: 'dock-calendar-day',
+                text: String(day),
+                x_expand: true,
+                x_align: CENTER,
+            });
+            if (viewY === todayY && viewM === todayM && day === todayD)
+                cell.add_style_class_name('today');
+            gl.attach(cell, col, row, 1, 1);
+            col++;
+            if (col > 6) { col = 0; row++; }
+        }
+    };
+
+    prev.connect('clicked', () => {
+        viewM--;
+        if (viewM < 1) { viewM = 12; viewY--; }
+        render();
+    });
+    next.connect('clicked', () => {
+        viewM++;
+        if (viewM > 12) { viewM = 1; viewY++; }
+        render();
+    });
+    render();
+    showPopup(container);
+}
+
 function makeWeather(spec, iconSize, _, lang, hooks) {
     const box = card('dock-widget-weather');
     const icon = new St.Icon({
@@ -650,12 +736,8 @@ function makeClock(spec, iconSize, _) {
     info.add_child(sub);
     box.add_child(info);
 
-    // Double-click → open the system calendar (GNOME date menu).
-    onDoubleClick(box, () => {
-        try {
-            Main.panel.statusArea.dateMenu.menu.open();
-        } catch (_e) { /* date menu unavailable */ }
-    });
+    // Double-click → open our own month calendar.
+    onDoubleClick(box, () => openCalendar());
 
     const fmt24 = spec.format24 !== false;   // default 24h
     const showDate = spec.showDate !== false; // default show date

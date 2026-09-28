@@ -470,3 +470,54 @@
     color: #ffffff;
     font-size: 10.5pt;
 }
+
+/* Own month calendar popup (double-click on the clock widget) */
+.dock-calendar {
+    background-color: rgba(28, 28, 32, 0.97);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+    padding: 12px 14px;
+    spacing: 8px;
+    min-width: 260px;
+}
+
+.dock-calendar-head {
+    spacing: 6px;
+}
+
+.dock-calendar-title {
+    color: #ffffff;
+    font-size: 11.5pt;
+    font-weight: bold;
+    text-transform: capitalize;
+}
+
+.dock-calendar-nav {
+    color: #f0f0f0;
+    border-radius: 999px;
+    padding: 4px;
+    transition-duration: 120ms;
+}
+
+.dock-calendar-nav:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+.dock-calendar-wd {
+    color: #a8a8a8;
+    font-size: 9pt;
+    padding: 4px 0;
+}
+
+.dock-calendar-day {
+    color: #e8e8e8;
+    font-size: 10pt;
+    padding: 6px 0;
+    border-radius: 999px;
+}
+
+.dock-calendar-day.today {
+    background-color: rgba(80, 140, 255, 0.65);
+    color: #ffffff;
+    font-weight: bold;
+}
