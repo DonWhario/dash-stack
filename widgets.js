@@ -68,6 +68,7 @@ const MPRIS_PATH = '/org/mpris/MediaPlayer2';
 
 function makeMpris(spec, iconSize, _) {
     const box = card('dock-widget-mpris');
+    setCardBg(box, 'reproduciendo.png');
     const art = new St.Icon({
         style_class: 'dock-widget-art',
         icon_name: 'audio-x-generic-symbolic',
@@ -231,7 +232,19 @@ function moduleDir() {
         return '.';
     }
 }
-const WEATHER_BG_DIR = GLib.build_filenamev([moduleDir(), 'data']);
+const DATA_DIR = GLib.build_filenamev([moduleDir(), 'data']);
+
+// file:// URI for a bundled image in data/.
+function dataUri(name) {
+    return Gio.File.new_for_path(GLib.build_filenamev([DATA_DIR, name])).get_uri();
+}
+
+// Sets a static background image (from data/) on a widget card.
+function setCardBg(box, name) {
+    box.set_style(
+        `background-image: url("${dataUri(name)}"); background-size: cover; ` +
+        'background-position: center;');
+}
 
 // Maps a wttr.in weather code to a coarse condition category.
 function weatherCategory(code) {
@@ -273,7 +286,7 @@ function weatherBgUri(code) {
         storm: 'lluvia.png',     // storm reuses the rain image
         snow: 'nieve.png',
     }[weatherCategory(code)] || 'soleado.png';
-    return Gio.File.new_for_path(`${WEATHER_BG_DIR}/${name}`).get_uri();
+    return dataUri(name);
 }
 
 function makeWeather(spec, iconSize, _, lang, hooks) {
@@ -295,7 +308,7 @@ function makeWeather(spec, iconSize, _, lang, hooks) {
     // Initial background: the last one this widget showed (persisted), so a
     // rebuild/relaunch keeps the previous look instead of flashing. Only the
     // very first time ever it falls back to sunny.
-    const soleado = Gio.File.new_for_path(`${WEATHER_BG_DIR}/soleado.png`).get_uri();
+    const soleado = dataUri('soleado.png');
     const cachedBg = hooks && spec.id ? hooks.getBg(spec.id) : null;
     const defaultBg = cachedBg || soleado;
     setBg(defaultBg);
@@ -408,6 +421,7 @@ function readBattery() {
 
 function makeSystem(spec, iconSize, _) {
     const box = card('dock-widget-system');
+    setCardBg(box, 'sistema.png');
     const show = spec.fields || {cpu: true, ram: true, battery: true};
 
     // Mini CPU-usage sparkline (last N samples).
@@ -480,6 +494,7 @@ function makeSystem(spec, iconSize, _) {
 
 function makeClock(spec, iconSize, _) {
     const box = card('dock-widget-clock');
+    setCardBg(box, 'reloj.png');
     const info = new St.BoxLayout({style_class: 'dock-widget-text', vertical: true, y_align: CENTER});
     const big = new St.Label({style_class: 'dock-widget-time'});
     const sub = new St.Label({style_class: 'dock-widget-sub'});

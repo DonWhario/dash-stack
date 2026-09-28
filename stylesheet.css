@@ -418,3 +418,19 @@
 .dock-widget-weather .dock-widget-art {
     icon-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
 }
+
+/* System / clock / now-playing cards: readable over their background image */
+.dock-widget-system .dock-widget-title,
+.dock-widget-system .dock-widget-sub,
+.dock-widget-clock .dock-widget-time,
+.dock-widget-clock .dock-widget-sub,
+.dock-widget-mpris .dock-widget-title,
+.dock-widget-mpris .dock-widget-sub {
+    color: #ffffff;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+
+.dock-widget-mpris .dock-widget-btn,
+.dock-widget-mpris .dock-widget-art {
+    icon-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
