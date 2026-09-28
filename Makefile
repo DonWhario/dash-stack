@@ -11,9 +11,11 @@ schemas: schemas/gschemas.compiled
 schemas/gschemas.compiled: schemas/*.gschema.xml
 	glib-compile-schemas schemas/
 
-# Package the extension into a .zip ready to distribute/install
+# Package the extension into a .zip ready to distribute/install.
+# extension.js and prefs.js both import translations.js, so it must be bundled
+# alongside systray.js (gnome-extensions pack only auto-includes a fixed set).
 pack: schemas
-	gnome-extensions pack --extra-source=systray.js --force .
+	gnome-extensions pack --extra-source=systray.js --extra-source=translations.js --force .
 	@echo "Generated: $(ZIP)"
 
 # Install the .zip into the user's system

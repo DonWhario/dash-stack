@@ -1999,12 +1999,20 @@ export default class DockStacksExtension extends Extension {
         const goingUp = this._settings.get_string('position') !== 'top';
         const step = iconSize + 18;   // vertical spacing between items
         const curve = this._settings.get_int('fan-curve'); // strip curvature
+        const tilt = this._settings.get_int('fan-tilt');    // per-card rotation (°)
         const startY = by - 6;        // just above the dock
         const n = ordered.length;
         // Horizontal arc offset for item i (0 bottom → n-1 top)
         const curveX = (i) => {
             const t = n > 1 ? i / (n - 1) : 0;
             return curve * Math.sin(t * Math.PI / 2);
+        };
+        // Progressive card tilt: 0° at the bottom card → `tilt`° at the top one,
+        // so the strip splays like a fanned deck (matches the macOS reference).
+        // Flipped for a top dock so it still splays away from the edge.
+        const tiltAngle = (i) => {
+            const t = n > 1 ? i / (n - 1) : 0;
+            return (goingUp ? 1 : -1) * tilt * t;
         };
 
         ordered.forEach((entry, i) => {
@@ -2042,9 +2050,10 @@ export default class DockStacksExtension extends Extension {
             const startX = centerX - cw + RPAD + iconSize / 2;
             cell.set_position(Math.round(startX), Math.round(startY - ch));
             cell.opacity = 0;
-            cell.set_pivot_point(0.5, 1.0);
+            cell.set_pivot_point(0.5, 1.0);   // rotate/scale around the card's base
             cell.scale_x = 0.4;
             cell.scale_y = 0.4;
+            cell.rotation_angle_z = 0;
 
             // Fast (near-instant) fan deployment
             cell.ease({
@@ -2053,6 +2062,7 @@ export default class DockStacksExtension extends Extension {
                 opacity: 255,
                 scale_x: 1,
                 scale_y: 1,
+                rotation_angle_z: tiltAngle(i),
                 duration: 140,
                 delay: i * 10,
                 mode: Clutter.AnimationMode.EASE_OUT_QUAD,
