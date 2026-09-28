@@ -289,13 +289,20 @@ function makeWeather(spec, iconSize, _, lang) {
     box.add_child(icon);
     box.add_child(col);
 
+    // Default background (sunny) shown immediately, so the card never appears
+    // without a background while the first fetch is in flight.
+    const defaultBg = Gio.File.new_for_path(`${WEATHER_BG_DIR}/soleado.png`).get_uri();
+    box.set_style(
+        `background-image: url("${defaultBg}"); background-size: cover; ` +
+        'background-position: center;');
+
     // wttr.in returns the description in English by default; request it in the
     // extension's language and read the translated `lang_<code>` field.
     const langCode = lang && lang !== 'en' ? lang : '';
 
     const session = new Soup.Session();
     let timer = 0;
-    let lastBg = '';   // current background URI, to avoid reloading it on refresh
+    let lastBg = defaultBg;   // current background URI, to avoid reloading on refresh
 
     const fetch = () => {
         // With a location, use it; empty → wttr.in auto-detects it from the
