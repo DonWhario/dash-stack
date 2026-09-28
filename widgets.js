@@ -75,7 +75,7 @@ function makeMpris(spec, iconSize, _) {
         icon_size: iconSize,
     });
     const {col, title, sub} = textColumn(_('Nada reproduciéndose'), '');
-    col.set_width(150);
+    setFlexWidth(col, 150);
 
     const controls = new St.BoxLayout({style_class: 'dock-widget-ctl', y_align: CENTER});
     const mkBtn = (iconName, method) => {
@@ -246,6 +246,15 @@ function setCardBg(box, name) {
         'background-position: center;');
 }
 
+// Variable width: the actor sizes to its content but is clamped to ±20% of a
+// base width, so a widget can grow/shrink a little without getting too big or
+// too small. Labels inside ellipsize when they hit the maximum.
+function setFlexWidth(actor, base) {
+    const min = Math.round(base * 0.8);
+    const max = Math.round(base * 1.2);
+    actor.set_style(`min-width: ${min}px; max-width: ${max}px;`);
+}
+
 // Maps a wttr.in weather code to a coarse condition category.
 function weatherCategory(code) {
     const c = String(code || '');
@@ -298,7 +307,7 @@ function makeWeather(spec, iconSize, _, lang, hooks) {
     });
     const loc = (spec.location || '').trim();
     const {col, title, sub} = textColumn(loc || _('Clima'), '…');
-    col.set_width(150);
+    setFlexWidth(col, 150);
     box.add_child(icon);
     box.add_child(col);
 
@@ -527,7 +536,7 @@ function makeClock(spec, iconSize, _) {
 function makeScript(spec, iconSize, _) {
     const box = card('dock-widget-script');
     const {col, title, sub} = textColumn('…', spec.label || '');
-    col.set_width(spec.width && spec.width > 0 ? spec.width : 180);
+    setFlexWidth(col, spec.width && spec.width > 0 ? spec.width : 180);
     if (!spec.label)
         sub.hide();
     box.add_child(col);
