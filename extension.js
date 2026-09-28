@@ -1999,6 +1999,8 @@ export default class DockStacksExtension extends Extension {
         const goingUp = this._settings.get_string('position') !== 'top';
         const step = iconSize + 18;   // vertical spacing between items
         const curve = this._settings.get_int('fan-curve'); // strip curvature
+        const tilt = this._settings.get_int('fan-tilt');    // progressive rotation (°)
+        const useTilt = tilt > 0;
         const startY = by - 6;        // just above the dock
         const n = ordered.length;
         // Horizontal arc offset for item i (0 bottom → n-1 top)
@@ -2006,6 +2008,18 @@ export default class DockStacksExtension extends Extension {
             const t = n > 1 ? i / (n - 1) : 0;
             return curve * Math.sin(t * Math.PI / 2);
         };
+        // Progressive tilt: bottom card 0° → top card `tilt`°, so the strip
+        // opens like a fanned deck. Flipped for a top dock.
+        const tiltAngle = (i) => {
+            const t = n > 1 ? i / (n - 1) : 0;
+            return (goingUp ? 1 : -1) * tilt * t;
+        };
+
+        // Tilt mode: cards are a uniform width and centered under the icon; the
+        // rotation itself opens the fan, so the sideways curve is skipped (it
+        // would turn the fan into a long diagonal staircase with long names).
+        const RPAD = 6;                 // cell right padding (CSS)
+        const fanW = Math.round(iconSize * 4);
 
         ordered.forEach((entry, i) => {
             const cell = this._makeFanCell(entry, iconSize, () => {
@@ -2024,27 +2038,37 @@ export default class DockStacksExtension extends Extension {
             });
             overlay.add_child(cell);
 
-            const [, cw] = cell.get_preferred_width(-1);
+            if (useTilt)
+                cell.set_width(fanW);
+            const cw = useTilt ? fanW : cell.get_preferred_width(-1)[1];
             const [, ch] = cell.get_preferred_height(cw);
 
-            // macOS-style semi-curved strip: the ICON COLUMN follows the arc.
-            // The icon is the cell's last child, so we anchor by the
-            // right edge so all icons stay aligned and the
-            // labels (of varying width) grow toward the left.
-            const RPAD = 6;                 // cell right padding (CSS)
-            const iconAnchorX = centerX + curveX(i);
-            let tx = iconAnchorX - cw + RPAD + iconSize / 2;
-            let ty = goingUp ? startY - (i + 1) * step : startY + (i + 1) * step;
+            let tx, ty;
+            if (useTilt) {
+                // Uniform, centered cards; tilt opens the fan.
+                tx = centerX - cw / 2;
+                ty = (goingUp ? startY - (i + 1) * step : startY + (i + 1) * step) - ch;
+            } else {
+                // macOS-style semi-curved strip: the ICON COLUMN follows the
+                // arc. The icon is anchored by the right edge so all icons stay
+                // aligned and the labels grow toward the left.
+                const iconAnchorX = centerX + curveX(i);
+                tx = iconAnchorX - cw + RPAD + iconSize / 2;
+                ty = goingUp ? startY - (i + 1) * step : startY + (i + 1) * step;
+            }
             tx = Math.max(monitor.x + 8, Math.min(tx, monitor.x + monitor.width - cw - 8));
             ty = Math.max(monitor.y + 8, Math.min(ty, monitor.y + monitor.height - ch - 8));
 
             // Initial state: all stacked over the dock icon (collapsed)
-            const startX = centerX - cw + RPAD + iconSize / 2;
+            const startX = useTilt
+                ? centerX - cw / 2
+                : centerX - cw + RPAD + iconSize / 2;
             cell.set_position(Math.round(startX), Math.round(startY - ch));
             cell.opacity = 0;
-            cell.set_pivot_point(0.5, 1.0);
+            cell.set_pivot_point(0.5, 1.0);   // rotate/scale around the base
             cell.scale_x = 0.4;
             cell.scale_y = 0.4;
+            cell.rotation_angle_z = 0;
 
             // Fast (near-instant) fan deployment
             cell.ease({
@@ -2053,6 +2077,7 @@ export default class DockStacksExtension extends Extension {
                 opacity: 255,
                 scale_x: 1,
                 scale_y: 1,
+                rotation_angle_z: useTilt ? tiltAngle(i) : 0,
                 duration: 140,
                 delay: i * 10,
                 mode: Clutter.AnimationMode.EASE_OUT_QUAD,
@@ -2070,6 +2095,7 @@ export default class DockStacksExtension extends Extension {
         const lbl = new St.Label({
             style_class: 'dock-fan-label',
             text: entry.name,
+            x_expand: true,   // fill the (uniform) card width and ellipsize
             y_align: Clutter.ActorAlign.CENTER,
         });
         lbl.clutter_text.set_ellipsize(3 /* END */);

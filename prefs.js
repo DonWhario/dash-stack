@@ -570,6 +570,16 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         settings.bind('fan-curve', curveRow, 'value', Gio.SettingsBindFlags.DEFAULT);
         sgroup.add(curveRow);
 
+        // Fan tilt (progressive card rotation). >0 switches the fan to a
+        // uniform-width, centered layout whose rotation opens the fan.
+        const tiltRow = new Adw.SpinRow({
+            title: _('Inclinación del abanico (°)'),
+            subtitle: _('0 = tarjetas rectas; más alto = tarjetas en abanico (ancho uniforme)'),
+            adjustment: new Gtk.Adjustment({lower: 0, upper: 45, step_increment: 1, value: settings.get_int('fan-tilt')}),
+        });
+        settings.bind('fan-tilt', tiltRow, 'value', Gio.SettingsBindFlags.DEFAULT);
+        sgroup.add(tiltRow);
+
         // Stack item order (ascending / descending)
         const sortModel = new Gtk.StringList();
         [_('Ascendente (A→Z)'), _('Descendente (Z→A)')].forEach(s => sortModel.append(s));
