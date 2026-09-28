@@ -221,20 +221,50 @@ function makeMpris(spec, iconSize, _) {
 }
 
 // ------------------------------------------------------------------- Weather
-function weatherIcon(code) {
+// Folder with the user's weather background images.
+const WEATHER_BG_DIR = '/home/fabarcad/Imágenes/Capturas de pantalla';
+
+// Maps a wttr.in weather code to a coarse condition category.
+function weatherCategory(code) {
     const c = String(code || '');
     const has = (list) => list.includes(c);
-    if (has(['200', '386', '389', '392', '395'])) return 'weather-storm-symbolic';
+    if (has(['200', '386', '389', '392', '395'])) return 'storm';
     if (has(['179', '182', '185', '227', '230', '317', '320', '323', '326', '329',
         '332', '335', '338', '350', '362', '365', '368', '371', '374', '377']))
-        return 'weather-snow-symbolic';
+        return 'snow';
     if (has(['176', '263', '266', '281', '284', '293', '296', '299', '302', '305',
         '308', '311', '314', '353', '356', '359']))
-        return 'weather-showers-symbolic';
-    if (has(['143', '248', '260'])) return 'weather-fog-symbolic';
-    if (has(['119', '122'])) return 'weather-overcast-symbolic';
-    if (has(['116'])) return 'weather-few-clouds-symbolic';
-    return 'weather-clear-symbolic';
+        return 'rain';
+    if (has(['143', '248', '260'])) return 'fog';
+    if (has(['119', '122'])) return 'cloudy';
+    if (has(['116'])) return 'partly';
+    return 'clear';
+}
+
+function weatherIcon(code) {
+    switch (weatherCategory(code)) {
+    case 'storm': return 'weather-storm-symbolic';
+    case 'snow': return 'weather-snow-symbolic';
+    case 'rain': return 'weather-showers-symbolic';
+    case 'fog': return 'weather-fog-symbolic';
+    case 'cloudy': return 'weather-overcast-symbolic';
+    case 'partly': return 'weather-few-clouds-symbolic';
+    default: return 'weather-clear-symbolic';
+    }
+}
+
+// Background image (file:// URI) for the weather card, per the user's mapping.
+function weatherBgUri(code) {
+    const name = {
+        clear: 'soleado.png',
+        partly: 'parcial.png',
+        cloudy: 'nublado.png',
+        fog: 'nublado.png',      // no dedicated fog image → cloudy
+        rain: 'lluvia.png',
+        storm: 'lluvia.png',     // storm reuses the rain image
+        snow: 'nieve.png',
+    }[weatherCategory(code)] || 'soleado.png';
+    return Gio.File.new_for_path(`${WEATHER_BG_DIR}/${name}`).get_uri();
 }
 
 function makeWeather(spec, iconSize, _) {
@@ -276,6 +306,11 @@ function makeWeather(spec, iconSize, _) {
                 icon.icon_name = weatherIcon(cur.weatherCode);
                 if (data.nearest_area && data.nearest_area[0])
                     title.text = data.nearest_area[0].areaName[0].value;
+                // Condition background image behind the card content.
+                const bg = weatherBgUri(cur.weatherCode);
+                box.set_style(
+                    `background-image: url("${bg}"); background-size: cover; ` +
+                    'background-position: center;');
             } catch (_e) {
                 sub.text = _('sin datos');
             }

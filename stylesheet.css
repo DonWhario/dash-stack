@@ -407,3 +407,14 @@
 .dock-widget-btn:hover {
     background-color: rgba(255, 255, 255, 0.18);
 }
+
+/* Weather card: text/icon readable over the condition background image */
+.dock-widget-weather .dock-widget-title,
+.dock-widget-weather .dock-widget-sub {
+    color: #ffffff;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+
+.dock-widget-weather .dock-widget-art {
+    icon-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
