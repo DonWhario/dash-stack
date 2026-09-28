@@ -258,6 +258,29 @@ function setFlexWidth(actor, base) {
     actor.set_style(`min-width: ${min}px; max-width: ${max}px;`);
 }
 
+// Calls `cb` on a left double-click of `actor`. Detected manually by timing two
+// presses, because this Clutter build's event has no get_click_count().
+function onDoubleClick(actor, cb) {
+    let last = 0;
+    actor.connect('button-press-event', (_a, ev) => {
+        let button = 1;
+        try { button = ev.get_button(); } catch (_e) { /* keep default */ }
+        if (button !== 1)
+            return Clutter.EVENT_PROPAGATE;
+        let t = 0;
+        try { t = ev.get_time(); } catch (_e) { t = 0; }
+        if (!t)
+            t = Math.floor(GLib.get_monotonic_time() / 1000);
+        if (last && t - last < 400) {
+            last = 0;
+            cb();
+            return Clutter.EVENT_STOP;
+        }
+        last = t;
+        return Clutter.EVENT_PROPAGATE;
+    });
+}
+
 // Maps a wttr.in weather code to a coarse condition category.
 function weatherCategory(code) {
     const c = String(code || '');
@@ -421,13 +444,7 @@ function makeWeather(spec, iconSize, _, lang, hooks) {
     // Double-click → 5-day forecast (uses coordinates from the last fetch).
     let lat = null;
     let lon = null;
-    box.connect('button-press-event', (_a, ev) => {
-        if (ev.get_button() === 1 && ev.get_click_count() === 2) {
-            openForecast(lat, lon, title.text, _);
-            return Clutter.EVENT_STOP;
-        }
-        return Clutter.EVENT_PROPAGATE;
-    });
+    onDoubleClick(box, () => openForecast(lat, lon, title.text, _));
 
     const setBg = (uri) => box.set_style(
         `background-image: url("${uri}"); background-size: cover; background-position: center;`);
@@ -634,14 +651,10 @@ function makeClock(spec, iconSize, _) {
     box.add_child(info);
 
     // Double-click → open the system calendar (GNOME date menu).
-    box.connect('button-press-event', (_a, ev) => {
-        if (ev.get_button() === 1 && ev.get_click_count() === 2) {
-            try {
-                Main.panel.statusArea.dateMenu.menu.open();
-            } catch (_e) { /* date menu unavailable */ }
-            return Clutter.EVENT_STOP;
-        }
-        return Clutter.EVENT_PROPAGATE;
+    onDoubleClick(box, () => {
+        try {
+            Main.panel.statusArea.dateMenu.menu.open();
+        } catch (_e) { /* date menu unavailable */ }
     });
 
     const fmt24 = spec.format24 !== false;   // default 24h
