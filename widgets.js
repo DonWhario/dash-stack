@@ -398,10 +398,38 @@ function openForecast(sourceActor, lat, lon, name, _) {
     container.add_child(header);
     const rows = new St.BoxLayout({style_class: 'dock-forecast-rows', vertical: true});
     container.add_child(rows);
+
+    // Pre-build the 5 rows synchronously (day + placeholder icon/temp) so the
+    // popup's size is stable BEFORE positioning; the fetch then fills them in.
+    const now = GLib.DateTime.new_now_local();
+    const refs = [];
+    for (let i = 0; i < 5; i++) {
+        const dt = now.add_days(i);
+        const row = new St.BoxLayout({style_class: 'dock-forecast-row'});
+        const day = new St.Label({
+            style_class: 'dock-forecast-day',
+            text: i === 0 ? _('Hoy') : dt.format('%a %d'),
+            x_expand: true,
+            x_align: Clutter.ActorAlign.START,
+        });
+        const ic = new St.Icon({
+            style_class: 'dock-forecast-icon',
+            icon_name: 'weather-clear-symbolic',
+            icon_size: 22,
+        });
+        const temp = new St.Label({style_class: 'dock-forecast-temp', text: '…'});
+        row.add_child(day);
+        row.add_child(ic);
+        row.add_child(temp);
+        rows.add_child(row);
+        refs.push({ic, temp});
+    }
+
     showPopup(container, sourceActor);
 
     if (lat == null || lon == null) {
-        rows.add_child(new St.Label({style_class: 'dock-forecast-day', text: _('sin datos')}));
+        for (const r of refs)
+            r.temp.text = _('sin datos');
         return;
     }
 
@@ -412,45 +440,28 @@ function openForecast(sourceActor, lat, lon, name, _) {
     try {
         msg = Soup.Message.new('GET', url);
     } catch (_e) {
-        rows.add_child(new St.Label({style_class: 'dock-forecast-day', text: _('sin datos')}));
+        for (const r of refs)
+            r.temp.text = _('sin datos');
         return;
     }
     session.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null, (s, res) => {
         try {
             const bytes = session.send_and_read_finish(res);
             const d = JSON.parse(new TextDecoder().decode(bytes.get_data())).daily;
-            for (let i = 0; i < d.time.length; i++) {
-                const [y, m, dd] = d.time[i].split('-').map(Number);
-                const dt = GLib.DateTime.new_local(y, m, dd, 12, 0, 0);
-                const row = new St.BoxLayout({style_class: 'dock-forecast-row'});
-                const day = new St.Label({
-                    style_class: 'dock-forecast-day',
-                    text: i === 0 ? _('Hoy') : dt.format('%a %d'),
-                    x_expand: true,
-                    x_align: Clutter.ActorAlign.START,
-                });
-                const ic = new St.Icon({
-                    style_class: 'dock-forecast-icon',
-                    icon_name: wmoIcon(d.weathercode[i]),
-                    icon_size: 22,
-                });
-                const temp = new St.Label({
-                    style_class: 'dock-forecast-temp',
-                    text: `${Math.round(d.temperature_2m_max[i])}° / ${Math.round(d.temperature_2m_min[i])}°`,
-                });
-                row.add_child(day);
-                row.add_child(ic);
-                row.add_child(temp);
-                rows.add_child(row);
+            for (let i = 0; i < refs.length && i < d.time.length; i++) {
+                refs[i].ic.icon_name = wmoIcon(d.weathercode[i]);
+                refs[i].temp.text =
+                    `${Math.round(d.temperature_2m_max[i])}° / ${Math.round(d.temperature_2m_min[i])}°`;
             }
         } catch (_e) {
-            rows.add_child(new St.Label({style_class: 'dock-forecast-day', text: _('sin datos')}));
+            for (const r of refs)
+                r.temp.text = _('sin datos');
         }
     });
 }
 
 // Own month calendar popup (double-click on the clock widget).
-function openCalendar() {
+function openCalendar(sourceActor) {
     const now = GLib.DateTime.new_now_local();
     let viewY = now.get_year();
     let viewM = now.get_month();
@@ -532,7 +543,7 @@ function openCalendar() {
         render();
     });
     render();
-    showPopup(container);
+    showPopup(container, sourceActor);
 }
 
 function makeWeather(spec, iconSize, _, lang, hooks) {
@@ -757,8 +768,8 @@ function makeClock(spec, iconSize, _) {
     info.add_child(sub);
     box.add_child(info);
 
-    // Double-click → open our own month calendar.
-    onDoubleClick(box, () => openCalendar());
+    // Double-click → open our own month calendar (above the clock widget).
+    onDoubleClick(box, () => openCalendar(box));
 
     const fmt24 = spec.format24 !== false;   // default 24h
     const showDate = spec.showDate !== false; // default show date
