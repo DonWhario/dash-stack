@@ -139,6 +139,7 @@ export default class DockStacksExtension extends Extension {
         this._stackOverlay = null;
         this._stackPopup = null;
         this._stackGrab = null;
+        this._hoverOpenTimeout = 0;
         this._relayoutId = 0;
         this._winSignals = [];   // [ [app, handlerId], ... ]
         this._dragActive = false;
@@ -323,6 +324,7 @@ export default class DockStacksExtension extends Extension {
         this._cancelPreviewTimers();
         this._destroyPreview();
         this._hideTooltip();
+        this._cancelHoverOpen();
         this._closeAppGrid();
         if (this._geomIdle) {
             GLib.source_remove(this._geomIdle);
@@ -634,6 +636,7 @@ export default class DockStacksExtension extends Extension {
         // don't fire on actors being destroyed.
         for (const child of this._dock.get_children())
             child.reactive = false;
+        this._cancelHoverOpen();    // drop any pending hover-open for old buttons
         this._dock.destroy_all_children();
         this._appButtonList = [];   // {app, btn} for minimize geometry
         this._stackButtons = [];    // {stack, btn} for hover-to-switch stacks
@@ -690,7 +693,28 @@ export default class DockStacksExtension extends Extension {
                 const stack = entry.stack;
                 const icon = this._stackIcon(stack, iconSize);
                 const btn = new DockItemButton(icon, stack.name, iconSize);
-                btn.connect('clicked', () => this._toggleStack(stack, btn));
+                btn.connect('clicked', () => {
+                    this._cancelHoverOpen();
+                    this._toggleStack(stack, btn);
+                });
+                // Hover to deploy: passing the pointer over a stack icon opens
+                // its fan (after a short delay so crossing the dock doesn't fire).
+                btn.connect('enter-event', () => {
+                    if (this._dragActive || this._currentStackId === stack.id)
+                        return Clutter.EVENT_PROPAGATE;
+                    this._cancelHoverOpen();
+                    this._hoverOpenTimeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 150, () => {
+                        this._hoverOpenTimeout = 0;
+                        if (btn.get_stage() && this._currentStackId !== stack.id)
+                            this._toggleStack(stack, btn);
+                        return GLib.SOURCE_REMOVE;
+                    });
+                    return Clutter.EVENT_PROPAGATE;
+                });
+                btn.connect('leave-event', () => {
+                    this._cancelHoverOpen();
+                    return Clutter.EVENT_PROPAGATE;
+                });
                 this._attachTooltip(btn, stack.name);
                 this._makeReorderable(btn, 'pinned', index, {token: entry.token});
                 this._attachContextMenu(btn, () => ([
@@ -945,6 +969,13 @@ export default class DockStacksExtension extends Extension {
         if (this._tooltipTimeout) {
             GLib.source_remove(this._tooltipTimeout);
             this._tooltipTimeout = 0;
+        }
+    }
+
+    _cancelHoverOpen() {
+        if (this._hoverOpenTimeout) {
+            GLib.source_remove(this._hoverOpenTimeout);
+            this._hoverOpenTimeout = 0;
         }
     }
 
