@@ -770,8 +770,12 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         exp.add_suffix(remove);
 
         if (w.type === 'weather') {
+            const loc = new Adw.EntryRow({title: _('Ubicación (vacío = automática)')});
+            loc.set_text(w.location || '');
+            loc.connect('apply', () => this._updateWidget(w.id, {location: loc.get_text().trim()}));
+            exp.add_row(loc);
             exp.add_row(new Adw.ActionRow({
-                subtitle: _('Ubicación automática, según tu conexión a internet.'),
+                subtitle: _('Escribe una ciudad y confirma (↵). Si lo dejas vacío, se detecta por tu conexión.'),
             }));
         } else if (w.type === 'script') {
             const cmd = new Adw.EntryRow({title: _('Comando')});
