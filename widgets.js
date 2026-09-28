@@ -421,7 +421,7 @@ function readBattery() {
 
 function makeSystem(spec, iconSize, _) {
     const box = card('dock-widget-system');
-    setCardBg(box, 'sistema.png');
+    setCardBg(box, 'sistemas.png');
     const show = spec.fields || {cpu: true, ram: true, battery: true};
 
     // Mini CPU-usage sparkline (last N samples).
