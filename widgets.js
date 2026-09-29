@@ -332,17 +332,40 @@ function weatherBgUri(code) {
     return dataUri(name);
 }
 
-// Icon for an open-meteo WMO weather code (used in the 5-day forecast).
-function wmoIcon(code) {
+// Category for an open-meteo WMO weather code.
+function wmoCategory(code) {
     const c = Number(code);
-    if ([95, 96, 99].includes(c)) return 'weather-storm-symbolic';
-    if ([71, 73, 75, 77, 85, 86].includes(c)) return 'weather-snow-symbolic';
-    if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(c))
-        return 'weather-showers-symbolic';
-    if ([45, 48].includes(c)) return 'weather-fog-symbolic';
-    if (c === 3) return 'weather-overcast-symbolic';
-    if ([1, 2].includes(c)) return 'weather-few-clouds-symbolic';
-    return 'weather-clear-symbolic';
+    if ([95, 96, 99].includes(c)) return 'storm';
+    if ([71, 73, 75, 77, 85, 86].includes(c)) return 'snow';
+    if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(c)) return 'rain';
+    if ([45, 48].includes(c)) return 'fog';
+    if (c === 3) return 'cloudy';
+    if ([1, 2].includes(c)) return 'partly';
+    return 'clear';
+}
+
+function wmoIcon(code) {
+    switch (wmoCategory(code)) {
+    case 'storm': return 'weather-storm-symbolic';
+    case 'snow': return 'weather-snow-symbolic';
+    case 'rain': return 'weather-showers-symbolic';
+    case 'fog': return 'weather-fog-symbolic';
+    case 'cloudy': return 'weather-overcast-symbolic';
+    case 'partly': return 'weather-few-clouds-symbolic';
+    default: return 'weather-clear-symbolic';
+    }
+}
+
+function wmoText(code, _) {
+    switch (wmoCategory(code)) {
+    case 'storm': return _('Tormenta');
+    case 'snow': return _('Nieve');
+    case 'rain': return _('Lluvia');
+    case 'fog': return _('Niebla');
+    case 'cloudy': return _('Nublado');
+    case 'partly': return _('Parcialmente nublado');
+    default: return _('Despejado');
+    }
 }
 
 // Shows `content` in a modal overlay (click outside / Escape closes). If
@@ -397,72 +420,150 @@ function showPopup(content, sourceActor) {
     return {close};
 }
 
-// 5-day forecast popup (open-meteo) for the given coordinates, shown next to
-// the weather widget (sourceActor) with a background image.
-function openForecast(sourceActor, lat, lon, name, _) {
-    const container = new St.BoxLayout({style_class: 'dock-forecast', vertical: true});
-    const header = new St.Label({style_class: 'dock-forecast-title', text: name || _('Clima')});
-    container.add_child(header);
-    const rows = new St.BoxLayout({style_class: 'dock-forecast-rows', vertical: true});
-    container.add_child(rows);
+function parseIso(s) {
+    const [d, t] = String(s).split('T');
+    const [y, mo, da] = d.split('-').map(Number);
+    const [h, mi] = (t || '0:0').split(':').map(Number);
+    return GLib.DateTime.new_local(y, mo, da, h, mi || 0, 0);
+}
 
-    // Pre-build the 5 rows synchronously (day + placeholder icon/temp) so the
-    // popup's size is stable BEFORE positioning; the fetch then fills them in.
+// Rich weather popup (current + hourly + 5-day) shown next to the widget.
+function openForecast(sourceActor, lat, lon, name, _) {
     const now = GLib.DateTime.new_now_local();
-    const refs = [];
+    const panelW = Math.max(sourceActor && sourceActor.width ? sourceActor.width : 0, 270);
+
+    const container = new St.BoxLayout({style_class: 'dock-forecast', vertical: true});
+    container.set_width(panelW);
+
+    // ---- Current conditions header ----
+    const head = new St.BoxLayout({style_class: 'dock-fc-head', vertical: true});
+    const locRow = new St.BoxLayout({style_class: 'dock-fc-loc'});
+    locRow.add_child(new St.Icon({icon_name: 'find-location-symbolic', icon_size: 14}));
+    locRow.add_child(new St.Label({style_class: 'dock-fc-loc-label', text: name || _('Clima')}));
+    head.add_child(locRow);
+
+    const bigRow = new St.BoxLayout({style_class: 'dock-fc-bigrow'});
+    const bigTemp = new St.Label({style_class: 'dock-fc-big', text: '…', y_align: CENTER});
+    const condBox = new St.BoxLayout({vertical: true, x_expand: true, x_align: Clutter.ActorAlign.END, y_align: CENTER});
+    const condIcon = new St.Icon({style_class: 'dock-fc-cond-icon', icon_name: 'weather-clear-symbolic', icon_size: 34, x_align: Clutter.ActorAlign.END});
+    const condLabel = new St.Label({style_class: 'dock-fc-cond', text: '', x_align: Clutter.ActorAlign.END});
+    condBox.add_child(condIcon);
+    condBox.add_child(condLabel);
+    bigRow.add_child(bigTemp);
+    bigRow.add_child(condBox);
+    head.add_child(bigRow);
+
+    const details = new St.BoxLayout({style_class: 'dock-fc-details'});
+    const mkDetail = (icon) => {
+        const b = new St.BoxLayout({style_class: 'dock-fc-detail', x_expand: true});
+        b.add_child(new St.Icon({icon_name: icon, icon_size: 13}));
+        const l = new St.Label({style_class: 'dock-fc-detail-label', text: '—', y_align: CENTER});
+        b.add_child(l);
+        details.add_child(b);
+        return l;
+    };
+    const windL = mkDetail('weather-windy-symbolic');
+    const pressL = mkDetail('daytime-sunset-symbolic');
+    const humL = mkDetail('weather-showers-scattered-symbolic');
+    head.add_child(details);
+    container.add_child(head);
+
+    // ---- Hourly (now +0/+3/+6/+9h) ----
+    const hoursBox = new St.BoxLayout({style_class: 'dock-fc-hours'});
+    const hourRefs = [];
+    const offsets = [0, 3, 6, 9];
+    for (const off of offsets) {
+        const col = new St.BoxLayout({style_class: 'dock-fc-hour', vertical: true, x_expand: true});
+        const ht = new St.Label({style_class: 'dock-fc-htime', text: now.add_hours(off).format('%H:00'), x_align: CENTER});
+        const hi = new St.Icon({icon_name: 'weather-clear-symbolic', icon_size: 18, x_align: CENTER});
+        const hp = new St.Label({style_class: 'dock-fc-htemp', text: '…', x_align: CENTER});
+        col.add_child(ht);
+        col.add_child(hi);
+        col.add_child(hp);
+        hoursBox.add_child(col);
+        hourRefs.push({hi, hp});
+    }
+    container.add_child(hoursBox);
+
+    // ---- Daily (5 days) ----
+    const daysBox = new St.BoxLayout({style_class: 'dock-fc-days', vertical: true});
+    const dayRefs = [];
     for (let i = 0; i < 5; i++) {
         const dt = now.add_days(i);
-        const row = new St.BoxLayout({style_class: 'dock-forecast-row'});
-        const day = new St.Label({
-            style_class: 'dock-forecast-day',
-            text: i === 0 ? _('Hoy') : dt.format('%a %d'),
+        const row = new St.BoxLayout({style_class: 'dock-fc-drow'});
+        const dn = new St.Label({
+            style_class: 'dock-fc-dname',
+            text: i === 0 ? _('Hoy') : dt.format('%a %d %b'),
             x_expand: true,
             x_align: Clutter.ActorAlign.START,
+            y_align: CENTER,
         });
-        const ic = new St.Icon({
-            style_class: 'dock-forecast-icon',
-            icon_name: 'weather-clear-symbolic',
-            icon_size: 22,
-        });
-        const temp = new St.Label({style_class: 'dock-forecast-temp', text: '…'});
-        row.add_child(day);
-        row.add_child(ic);
-        row.add_child(temp);
-        rows.add_child(row);
-        refs.push({ic, temp});
+        const di = new St.Icon({style_class: 'dock-forecast-icon', icon_name: 'weather-clear-symbolic', icon_size: 20});
+        const dmax = new St.Label({style_class: 'dock-fc-dmax', text: '…', y_align: CENTER});
+        const dmin = new St.Label({style_class: 'dock-fc-dmin', text: '', y_align: CENTER});
+        row.add_child(dn);
+        row.add_child(di);
+        row.add_child(dmax);
+        row.add_child(dmin);
+        daysBox.add_child(row);
+        dayRefs.push({di, dmax, dmin});
     }
+    container.add_child(daysBox);
 
     showPopup(container, sourceActor);
 
     if (lat == null || lon == null) {
-        for (const r of refs)
-            r.temp.text = _('sin datos');
+        bigTemp.text = _('sin datos');
         return;
     }
 
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-        '&daily=weathercode,temperature_2m_max,temperature_2m_min&forecast_days=5&timezone=auto';
+        '&current=temperature_2m,weather_code,wind_speed_10m,surface_pressure,relative_humidity_2m' +
+        '&hourly=temperature_2m,weather_code' +
+        '&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=5&timezone=auto';
     const session = new Soup.Session();
     let msg;
     try {
         msg = Soup.Message.new('GET', url);
     } catch (_e) {
-        for (const r of refs)
-            r.temp.text = _('sin datos');
+        bigTemp.text = _('sin datos');
         return;
     }
     session.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null, (s, res) => {
         try {
             const bytes = session.send_and_read_finish(res);
-            const d = JSON.parse(new TextDecoder().decode(bytes.get_data())).daily;
-            for (let i = 0; i < refs.length && i < d.time.length; i++) {
-                refs[i].ic.icon_name = wmoIcon(d.weathercode[i]);
-                refs[i].temp.text =
-                    `${Math.round(d.temperature_2m_max[i])}° / ${Math.round(d.temperature_2m_min[i])}°`;
+            const data = JSON.parse(new TextDecoder().decode(bytes.get_data()));
+            const cur = data.current;
+            bigTemp.text = `${Math.round(cur.temperature_2m)}°`;
+            condIcon.icon_name = wmoIcon(cur.weather_code);
+            condLabel.text = wmoText(cur.weather_code, _);
+            windL.text = `${Math.round(cur.wind_speed_10m)} km/h`;
+            pressL.text = `${Math.round(cur.surface_pressure)} hPa`;
+            humL.text = `${Math.round(cur.relative_humidity_2m)} %`;
+
+            const h = data.hourly;
+            const nowKey = now.format('%Y-%m-%dT%H:00');
+            let idx = h.time.indexOf(nowKey);
+            if (idx < 0)
+                idx = h.time.findIndex(t => t >= nowKey);
+            if (idx < 0)
+                idx = 0;
+            for (let k = 0; k < hourRefs.length; k++) {
+                const j = idx + offsets[k];
+                if (j < h.time.length) {
+                    hourRefs[k].hi.icon_name = wmoIcon(h.weather_code[j]);
+                    hourRefs[k].hp.text = `${Math.round(h.temperature_2m[j])}°`;
+                }
+            }
+
+            const d = data.daily;
+            for (let i = 0; i < dayRefs.length && i < d.time.length; i++) {
+                dayRefs[i].di.icon_name = wmoIcon(d.weather_code[i]);
+                dayRefs[i].dmax.text = `${Math.round(d.temperature_2m_max[i])}°`;
+                dayRefs[i].dmin.text = `${Math.round(d.temperature_2m_min[i])}°`;
             }
         } catch (_e) {
-            for (const r of refs)
-                r.temp.text = _('sin datos');
+            bigTemp.text = _('sin datos');
         }
     });
 }
