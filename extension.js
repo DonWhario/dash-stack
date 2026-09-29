@@ -917,22 +917,25 @@ export default class DockStacksExtension extends Extension {
         } catch (_e) { /* OSD is optional */ }
     }
 
-    // Compact dock toggle for immersive mode (next to the apps button).
+    // Compact dock toggle for immersive mode (next to the apps button). Uses the
+    // on.png / off.png pill images from data/, switching with the state.
     _makeImmersiveToggle(iconSize) {
-        const sz = Math.max(16, Math.round(iconSize * 0.55));
-        const icon = new St.Icon({icon_name: 'view-fullscreen-symbolic', icon_size: sz});
+        const h = Math.max(18, Math.round(iconSize * 0.7));
+        const w = Math.round((h * 423) / 225);   // on/off images are 423x225
+        const img = new St.Bin({style_class: 'dock-immersive-img'});
+        img.set_size(w, h);
         const btn = new St.Button({
             style_class: 'dock-immersive-toggle',
             can_focus: true,
-            child: icon,
+            child: img,
         });
+        const uriFor = (on) =>
+            Gio.File.new_for_path(`${this.path}/data/${on ? 'on' : 'off'}.png`).get_uri();
         const sync = () => {
             const on = this._settings.get_boolean('immersive-fullscreen');
-            if (on)
-                btn.add_style_class_name('on');
-            else
-                btn.remove_style_class_name('on');
-            icon.icon_name = on ? 'view-fullscreen-symbolic' : 'view-restore-symbolic';
+            img.set_style(
+                `background-image: url("${uriFor(on)}"); ` +
+                'background-size: contain; background-position: center;');
         };
         sync();
         btn.connect('clicked', () => this._toggleImmersive());
