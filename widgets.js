@@ -22,6 +22,7 @@ import Soup from 'gi://Soup';
 import Shell from 'gi://Shell';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import * as Calendar from 'resource:///org/gnome/shell/ui/calendar.js';
 
 const CENTER = Clutter.ActorAlign.CENTER;
 
@@ -606,50 +607,145 @@ function openCalendar(sourceActor) {
     grid.set_layout_manager(gl);
     container.add_child(grid);
 
+    // Events of the selected day (from GNOME Online Accounts / calendars).
+    const eventsBox = new St.BoxLayout({style_class: 'dock-calendar-events', vertical: true});
+    container.add_child(eventsBox);
+
+    // Event source: aggregates the calendars connected in GNOME (Google,
+    // Microsoft, CalDAV/iCloud…). Degrades gracefully if unavailable.
+    let source = null;
+    try {
+        source = new Calendar.DBusEventSource();
+    } catch (_e) {
+        source = null;
+    }
+
+    const eventsOn = (day) => {
+        if (!source)
+            return [];
+        try {
+            const b = new Date(viewY, viewM - 1, day, 0, 0, 0);
+            const e = new Date(viewY, viewM - 1, day, 23, 59, 59);
+            return source.getEvents(b, e) || [];
+        } catch (_e) {
+            return [];
+        }
+    };
+
+    const pad2 = (n) => (n < 10 ? '0' + n : '' + n);
+    let selectedDay = (viewY === todayY && viewM === todayM) ? todayD : 1;
+    const dayButtons = {};
+
+    const showDayEvents = (day) => {
+        eventsBox.destroy_all_children();
+        const evs = eventsOn(day).slice().sort((a, b) => a.date - b.date);
+        if (evs.length === 0) {
+            eventsBox.add_child(new St.Label({style_class: 'dock-calendar-noevents', text: _('Sin eventos')}));
+            return;
+        }
+        for (const ev of evs.slice(0, 6)) {
+            const r = new St.BoxLayout({style_class: 'dock-calendar-event'});
+            const when = ev.allDay
+                ? _('Todo el día')
+                : `${pad2(ev.date.getHours())}:${pad2(ev.date.getMinutes())}`;
+            r.add_child(new St.Label({style_class: 'dock-calendar-event-time', text: when}));
+            const t = new St.Label({
+                style_class: 'dock-calendar-event-title',
+                text: ev.summary || _('(sin título)'),
+                x_expand: true,
+            });
+            t.clutter_text.set_ellipsize(3);
+            r.add_child(t);
+            eventsBox.add_child(r);
+        }
+    };
+
+    const selectDay = (day) => {
+        if (dayButtons[selectedDay])
+            dayButtons[selectedDay].remove_style_class_name('selected');
+        selectedDay = day;
+        if (dayButtons[day])
+            dayButtons[day].add_style_class_name('selected');
+        showDayEvents(day);
+    };
+
     const render = () => {
         grid.destroy_all_children();
+        for (const k of Object.keys(dayButtons))
+            delete dayButtons[k];
         const first = GLib.DateTime.new_local(viewY, viewM, 1, 12, 0, 0);
         titleL.text = first.format('%B %Y');
         // Weekday headers (Monday-first; 2024-01-01 was a Monday).
         for (let i = 0; i < 7; i++) {
             const d = GLib.DateTime.new_local(2024, 1, 1 + i, 12, 0, 0);
-            const l = new St.Label({
+            gl.attach(new St.Label({
                 style_class: 'dock-calendar-wd',
                 text: d.format('%a'),
                 x_expand: true,
                 x_align: CENTER,
-            });
-            gl.attach(l, i, 0, 1, 1);
+            }), i, 0, 1, 1);
+        }
+        // Ask the source to load this month's events.
+        if (source) {
+            try {
+                source.requestRange(
+                    new Date(viewY, viewM - 1, 1, 0, 0, 0),
+                    new Date(viewY, viewM - 1, first.add_months(1).add_days(-1).get_day_of_month(), 23, 59, 59));
+            } catch (_e) { /* ignore */ }
         }
         const startDow = first.get_day_of_week();   // 1=Mon .. 7=Sun
         const daysInMonth = first.add_months(1).add_days(-1).get_day_of_month();
         let col = startDow - 1;
         let row = 1;
         for (let day = 1; day <= daysInMonth; day++) {
-            const cell = new St.Label({
+            const cell = new St.Button({
                 style_class: 'dock-calendar-day',
-                text: String(day),
+                label: String(day),
                 x_expand: true,
-                x_align: CENTER,
+                can_focus: true,
             });
             if (viewY === todayY && viewM === todayM && day === todayD)
                 cell.add_style_class_name('today');
+            if (eventsOn(day).length > 0)
+                cell.add_style_class_name('has-event');
+            if (day === selectedDay)
+                cell.add_style_class_name('selected');
+            cell.connect('clicked', () => selectDay(day));
             gl.attach(cell, col, row, 1, 1);
+            dayButtons[day] = cell;
             col++;
             if (col > 6) { col = 0; row++; }
         }
+        showDayEvents(selectedDay);
     };
 
     prev.connect('clicked', () => {
         viewM--;
         if (viewM < 1) { viewM = 12; viewY--; }
+        selectedDay = 1;
         render();
     });
     next.connect('clicked', () => {
         viewM++;
         if (viewM > 12) { viewM = 1; viewY++; }
+        selectedDay = 1;
         render();
     });
+
+    // Re-render when the calendars finish loading / change.
+    let changedId = 0;
+    if (source) {
+        try {
+            changedId = source.connect('changed', () => render());
+        } catch (_e) { /* ignore */ }
+    }
+    container.connect('destroy', () => {
+        if (source) {
+            try { if (changedId) source.disconnect(changedId); } catch (_e) { /* ok */ }
+            try { source.destroy(); } catch (_e) { /* ok */ }
+        }
+    });
+
     render();
     showPopup(container, sourceActor);
 }

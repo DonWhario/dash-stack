@@ -601,3 +601,45 @@
 .dock-forecast-icon {
     color: #ffffff;
 }
+
+/* Calendar: event marks, selection and the day's events list */
+.dock-calendar-day.has-event {
+    background-color: rgba(80, 140, 255, 0.22);
+}
+
+.dock-calendar-day.selected {
+    border: 1px solid rgba(255, 255, 255, 0.85);
+}
+
+.dock-calendar-day.today {
+    background-color: rgba(80, 140, 255, 0.65);
+    color: #ffffff;
+    font-weight: bold;
+}
+
+.dock-calendar-events {
+    spacing: 3px;
+    padding: 6px 2px 0 2px;
+}
+
+.dock-calendar-event {
+    spacing: 8px;
+    padding: 3px 2px;
+}
+
+.dock-calendar-event-time {
+    color: #9fbfff;
+    font-size: 9pt;
+    min-width: 46px;
+}
+
+.dock-calendar-event-title {
+    color: #e8e8e8;
+    font-size: 9.5pt;
+}
+
+.dock-calendar-noevents {
+    color: #a0a0a0;
+    font-size: 9pt;
+    padding: 6px 2px 0 2px;
+}
