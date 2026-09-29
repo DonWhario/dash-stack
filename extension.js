@@ -2603,17 +2603,20 @@ export default class DockStacksExtension extends Extension {
                this._hasFullMonitorWindow();
     }
 
-    // Detects games in "borderless window" (fake fullscreen): a NORMAL,
-    // non-maximized window whose frame covers the WHOLE monitor (including the
-    // top bar area). Comparing against the full monitor geometry
-    // —not the work area— distinguishes this mode from a merely
-    // maximized window (which respects the top bar).
+    // Detects games in "borderless / fullscreen window": a NORMAL window whose
+    // frame covers the WHOLE monitor INCLUDING the top-bar area. Comparing
+    // against the full monitor geometry (not the work area) distinguishes this
+    // from a merely maximized window, whose frame sits below the top bar
+    // (r.y > m.y) and therefore does NOT match — so normal maximized windows
+    // (Firefox, Battle.net, etc.) keep the bars, but a fullscreen game hides
+    // them even when Mutter reports it as maximized.
     _hasFullMonitorWindow() {
         try {
             const idx = Main.layoutManager.primaryIndex;
             const m = Main.layoutManager.primaryMonitor;
             if (!m)
                 return false;
+            const T = 2; // small tolerance in px
             const ws = global.workspace_manager.get_active_workspace();
             const windows = global.display.get_tab_list(Meta.TabList.NORMAL, ws);
             for (const w of windows) {
@@ -2623,14 +2626,10 @@ export default class DockStacksExtension extends Extension {
                     continue;
                 if (w.get_window_type() !== Meta.WindowType.NORMAL)
                     continue;
-                // Ignore merely maximized windows.
-                if (w.get_maximized &&
-                    w.get_maximized() === (Meta.MaximizeFlags.HORIZONTAL | Meta.MaximizeFlags.VERTICAL))
-                    continue;
                 const r = w.get_frame_rect();
-                if (r.x <= m.x && r.y <= m.y &&
-                    r.x + r.width >= m.x + m.width &&
-                    r.y + r.height >= m.y + m.height)
+                if (r.x <= m.x + T && r.y <= m.y + T &&
+                    r.x + r.width >= m.x + m.width - T &&
+                    r.y + r.height >= m.y + m.height - T)
                     return true;
             }
         } catch (_e) { /* no changes */ }
