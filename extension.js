@@ -765,14 +765,15 @@ export default class DockStacksExtension extends Extension {
             }
         });
 
-        // Running NON-favorite apps (grouped: one icon per app)
+        // Running NON-favorite apps: up to 5 icons; the rest go into a fan.
         if (showRunning) {
+            const MAX_RUNNING_ICONS = 5;
             const others = runningApps.filter(a => !favIds.has(a.get_id()));
             if (others.length && this._dock.get_n_children() > 0) {
                 const sep = new St.Widget({style_class: 'dock-separator'});
                 this._dock.add_child(sep);
             }
-            for (const app of others) {
+            for (const app of others.slice(0, MAX_RUNNING_ICONS)) {
                 const icon = app.create_icon_texture(iconSize);
                 const btn = new DockItemButton(icon, app.get_name(), iconSize);
                 btn.add_style_class_name('dock-running-item');
@@ -791,6 +792,44 @@ export default class DockStacksExtension extends Extension {
                 if (previews)
                     this._attachWindowPreview(btn, app);
                 this._watchApp(app);
+            }
+
+            // Overflow: 6th running app onward, shown in a fan under one icon.
+            const overflow = others.slice(MAX_RUNNING_ICONS);
+            if (overflow.length) {
+                const synthStack = {
+                    id: '__running_overflow__',
+                    name: _('Apps en ejecución'),
+                    type: 'apps',
+                    apps: overflow.map(a => a.get_id()),
+                    style: 'fan',
+                };
+                const oicon = new St.Icon({icon_name: 'view-more-symbolic', icon_size: iconSize});
+                const btn = new DockItemButton(oicon, synthStack.name, iconSize);
+                btn.add_style_class_name('dock-running-item');
+                btn.connect('clicked', () => {
+                    this._cancelHoverOpen();
+                    this._toggleStack(synthStack, btn);
+                });
+                btn.connect('enter-event', () => {
+                    if (this._dragActive || this._currentStackId === synthStack.id)
+                        return Clutter.EVENT_PROPAGATE;
+                    this._cancelHoverOpen();
+                    this._hoverOpenTimeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 150, () => {
+                        this._hoverOpenTimeout = 0;
+                        if (btn.get_stage() && this._currentStackId !== synthStack.id)
+                            this._toggleStack(synthStack, btn);
+                        return GLib.SOURCE_REMOVE;
+                    });
+                    return Clutter.EVENT_PROPAGATE;
+                });
+                btn.connect('leave-event', () => {
+                    this._cancelHoverOpen();
+                    return Clutter.EVENT_PROPAGATE;
+                });
+                this._attachTooltip(btn, `${synthStack.name} (${overflow.length})`);
+                this._dock.add_child(btn);
+                this._stackButtons.push({stack: synthStack, btn});
             }
         }
 
