@@ -162,6 +162,18 @@ export default class DockStacksExtension extends Extension {
         this._applySysTray();
         this._playStartupSound();
 
+        // Keyboard shortcut (Ctrl+Shift+Space) to toggle immersive mode.
+        try {
+            Main.wm.addKeybinding(
+                'toggle-immersive',
+                this._settings,
+                Meta.KeyBindingFlags.NONE,
+                Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW,
+                () => this._toggleImmersive());
+        } catch (e) {
+            logError(e, 'Dock Stack: addKeybinding');
+        }
+
         // React to settings changes
         this._settingsChangedId = this._settings.connect('changed', (_s, key) => {
             if (key === 'stacks' || key === 'widgets' || key === 'show-favorites' ||
@@ -337,6 +349,7 @@ export default class DockStacksExtension extends Extension {
         this._cancelHoverOpen();
         this._destroyWidgets();
         this._setTopPanelHidden(false);   // restore the top panel if we hid it
+        try { Main.wm.removeKeybinding('toggle-immersive'); } catch (_e) { /* ok */ }
         this._closeAppGrid();
         if (this._geomIdle) {
             GLib.source_remove(this._geomIdle);
@@ -672,6 +685,9 @@ export default class DockStacksExtension extends Extension {
             this._dock.add_child(sep);
         }
 
+        // Immersive-mode toggle: compact, right after the apps button/separator.
+        this._dock.add_child(this._makeImmersiveToggle(iconSize));
+
         // ---- Pinned items: favorites and stacks in a UNIFIED ORDER ----
         // They can be reordered and MIXED freely (no separation).
         const favIds = new Set();
@@ -884,6 +900,47 @@ export default class DockStacksExtension extends Extension {
                 return Clutter.EVENT_STOP;
             }
             return Clutter.EVENT_PROPAGATE;
+        });
+        return btn;
+    }
+
+    // Toggles the immersive-fullscreen setting and shows brief OSD feedback.
+    _toggleImmersive() {
+        const on = !this._settings.get_boolean('immersive-fullscreen');
+        this._settings.set_boolean('immersive-fullscreen', on);
+        try {
+            const icon = new Gio.ThemedIcon({
+                name: on ? 'view-fullscreen-symbolic' : 'view-restore-symbolic',
+            });
+            const label = `${_('Modo inmersivo')}: ${on ? _('Activado') : _('Desactivado')}`;
+            Main.osdWindowManager.show(Main.layoutManager.primaryIndex, icon, label, null);
+        } catch (_e) { /* OSD is optional */ }
+    }
+
+    // Compact dock toggle for immersive mode (next to the apps button).
+    _makeImmersiveToggle(iconSize) {
+        const sz = Math.max(16, Math.round(iconSize * 0.55));
+        const icon = new St.Icon({icon_name: 'view-fullscreen-symbolic', icon_size: sz});
+        const btn = new St.Button({
+            style_class: 'dock-immersive-toggle',
+            can_focus: true,
+            child: icon,
+        });
+        const sync = () => {
+            const on = this._settings.get_boolean('immersive-fullscreen');
+            if (on)
+                btn.add_style_class_name('on');
+            else
+                btn.remove_style_class_name('on');
+            icon.icon_name = on ? 'view-fullscreen-symbolic' : 'view-restore-symbolic';
+        };
+        sync();
+        btn.connect('clicked', () => this._toggleImmersive());
+        this._attachTooltip(btn, _('Modo inmersivo (Ctrl+Shift+Espacio)'));
+        // Keep the toggle in sync with the setting (shortcut, prefs, other click).
+        const changedId = this._settings.connect('changed::immersive-fullscreen', () => sync());
+        btn.connect('destroy', () => {
+            try { this._settings.disconnect(changedId); } catch (_e) { /* ok */ }
         });
         return btn;
     }

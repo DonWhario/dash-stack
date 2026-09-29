@@ -643,3 +643,25 @@
     font-size: 9pt;
     padding: 6px 2px 0 2px;
 }
+
+/* Compact immersive-mode toggle in the dock */
+.dock-immersive-toggle {
+    border-radius: 999px;
+    padding: 4px;
+    margin: 0 2px;
+    color: rgba(255, 255, 255, 0.55);
+    background-color: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    transition-duration: 150ms;
+}
+
+.dock-immersive-toggle:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+    color: #ffffff;
+}
+
+.dock-immersive-toggle.on {
+    color: #ffffff;
+    background-color: rgba(76, 154, 255, 0.85);
+    border-color: rgba(76, 154, 255, 0.95);
+}

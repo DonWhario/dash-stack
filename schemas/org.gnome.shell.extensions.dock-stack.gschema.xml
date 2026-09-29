@@ -69,6 +69,11 @@
       <summary>Modo inmersivo: ocultar el dock y la barra superior (y liberar el espacio) cuando una ventana enfocada llena la pantalla (juegos, video, ventanas maximizadas)</summary>
     </key>
 
+    <key name="toggle-immersive" type="as">
+      <default>["&lt;Control&gt;&lt;Shift&gt;space"]</default>
+      <summary>Atajo de teclado para activar/desactivar el modo inmersivo</summary>
+    </key>
+
     <key name="reserve-space" type="b">
       <default>true</default>
       <summary>Reservar el espacio del dock para que las ventanas no se le superpongan</summary>
