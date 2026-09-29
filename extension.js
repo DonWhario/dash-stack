@@ -2616,33 +2616,39 @@ export default class DockStacksExtension extends Extension {
             const m = Main.layoutManager.primaryMonitor;
             if (!m)
                 return false;
-            const T = 2; // small tolerance in px
-            const ws = global.workspace_manager.get_active_workspace();
-            const windows = global.display.get_tab_list(Meta.TabList.NORMAL, ws);
+            const T = 3; // small tolerance in px
+            const wa = Main.layoutManager.getWorkAreaForMonitor(idx);
+            const covers = (r, box) => !!box &&
+                r.x <= box.x + T && r.y <= box.y + T &&
+                r.x + r.width >= box.x + box.width - T &&
+                r.y + r.height >= box.y + box.height - T;
+
             let hit = false;
-            let dbg = `mon idx=${idx} @${m.x},${m.y} ${m.width}x${m.height} |`;
-            for (const w of windows) {
-                if (!w || w.minimized)
-                    continue;
-                if (w.get_monitor() !== idx)
+
+            // Any window in REAL fullscreen or covering the whole monitor.
+            const ws = global.workspace_manager.get_active_workspace();
+            for (const w of global.display.get_tab_list(Meta.TabList.NORMAL, ws)) {
+                if (!w || w.minimized || w.get_monitor() !== idx)
                     continue;
                 if (w.get_window_type() !== Meta.WindowType.NORMAL)
                     continue;
-                const r = w.get_frame_rect();
-                const isFs = w.is_fullscreen ? w.is_fullscreen() : false;
-                const maxd = w.get_maximized ? w.get_maximized() : 0;
-                const wmclass = w.get_wm_class ? w.get_wm_class() : '?';
-                dbg += ` [${wmclass} ${r.x},${r.y} ${r.width}x${r.height} fs=${isFs} max=${maxd}]`;
-                const coversFull = r.x <= m.x + T && r.y <= m.y + T &&
-                    r.x + r.width >= m.x + m.width - T &&
-                    r.y + r.height >= m.y + m.height - T;
-                if (isFs || coversFull)
+                if ((w.is_fullscreen && w.is_fullscreen()) || covers(w.get_frame_rect(), m)) {
                     hit = true;
+                    break;
+                }
             }
-            // Diagnostic (logged only when it changes): journalctl --user -f | grep DS-FS
-            if (dbg !== this._fsDebugLast) {
-                this._fsDebugLast = dbg;
-                log(`DS-FS: ${dbg} => hide=${hit}`);
+
+            // Or: the FOCUSED window fills the usable work area (a maximized app
+            // or a game in "windowed fullscreen"). Geometrically these are
+            // identical, so we hide for both, like an intelligent auto-hide.
+            const focus = global.display.get_focus_window
+                ? global.display.get_focus_window() : null;
+            if (!hit && focus && !focus.minimized &&
+                focus.get_monitor() === idx &&
+                focus.get_window_type() === Meta.WindowType.NORMAL) {
+                const fr = focus.get_frame_rect();
+                if (covers(fr, wa) || covers(fr, m))
+                    hit = true;
             }
             return hit;
         } catch (e) {
