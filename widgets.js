@@ -700,7 +700,7 @@ function makeSystem(spec, iconSize, _) {
     // Mini CPU-usage sparkline (last N samples).
     const SAMPLES = 30;
     const hist = new Array(SAMPLES).fill(0);
-    const graphH = Math.max(34, iconSize);
+    const graphH = iconSize;
     const area = new St.DrawingArea({style_class: 'dock-widget-graph'});
     area.set_width(58);
     area.set_height(graphH);
