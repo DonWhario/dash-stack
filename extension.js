@@ -145,6 +145,7 @@ export default class DockStacksExtension extends Extension {
         this._stackPopup = null;
         this._stackGrab = null;
         this._hoverOpenTimeout = 0;
+        this._topPanelHidden = false;
         this._widgetInstances = [];
         this._weatherCache = this._loadWeatherCache();
         this._relayoutId = 0;
@@ -333,6 +334,7 @@ export default class DockStacksExtension extends Extension {
         this._hideTooltip();
         this._cancelHoverOpen();
         this._destroyWidgets();
+        this._setTopPanelHidden(false);   // restore the top panel if we hid it
         this._closeAppGrid();
         if (this._geomIdle) {
             GLib.source_remove(this._geomIdle);
@@ -611,6 +613,7 @@ export default class DockStacksExtension extends Extension {
             affectsStruts: this._settings.get_boolean('reserve-space'),
             trackFullscreen: true,
         });
+        this._strutsActive = this._settings.get_boolean('reserve-space');
 
         // The dock acts as the drop target for reordering
         this._dock._delegate = this;
@@ -2534,35 +2537,61 @@ export default class DockStacksExtension extends Extension {
         });
     }
 
-    // Reapplies the reserved space (struts) by re-registering the chrome
+    // Reapplies the reserved space when the setting changes.
     _applyReserveSpace() {
-        if (!this._container)
-            return;
-        const reserve = this._settings.get_boolean('reserve-space');
-        try {
-            Main.layoutManager.removeChrome(this._container);
-            Main.layoutManager.addChrome(this._container, {
-                affectsStruts: reserve,
-                trackFullscreen: true,
-            });
-        } catch (_e) { /* the chrome may not be added yet */ }
-        this._relayout();
         this._updateVisibility();
+    }
+
+    // Enables/disables the dock's reserved space (strut) in place, without
+    // re-registering the chrome (avoids flicker/re-parenting). Used to release
+    // the reserved strip while a fullscreen/maximized window is focused.
+    _applyStruts(enabled) {
+        if (this._strutsActive === enabled || !this._container)
+            return;
+        this._strutsActive = enabled;
+        try {
+            const lm = Main.layoutManager;
+            const i = lm._findActor(this._container);
+            if (i >= 0 && lm._trackedActors[i]) {
+                lm._trackedActors[i].affectsStruts = enabled;
+                lm._queueUpdateRegions();
+            }
+        } catch (e) {
+            logError(e, 'Dock Stack: struts');
+        }
+    }
+
+    // Hides/shows the GNOME top panel (only while a fullscreen/covering window
+    // is focused). Restored on leave and on disable.
+    _setTopPanelHidden(hidden) {
+        if (this._topPanelHidden === hidden)
+            return;
+        this._topPanelHidden = hidden;
+        try {
+            if (hidden)
+                Main.panel.hide();
+            else
+                Main.panel.show();
+        } catch (_e) { /* ignore */ }
     }
 
     // Decides whether the dock should be shown
     _updateVisibility() {
         if (!this._container)
             return;
-        // In fullscreen (games, video) hide the dock, above
-        // "reserve space" / intellihide / autohide. Struts are not touched:
-        // a fullscreen window ignores them and GNOME hides the chrome
-        // via 'trackFullscreen'. (Recreating the chrome here made the first
-        // fullscreen transition fail to hide the bars properly.)
+        // In fullscreen / covering window (games, video) get out of the way:
+        // hide the dock, RELEASE its reserved space (so no empty strip is left)
+        // and hide the top panel — above "reserve space" / intellihide / autohide.
         if (this._shouldHideForWindow()) {
+            this._applyStruts(false);
+            this._setTopPanelHidden(true);
             this._showDock(false);
             return;
         }
+        // Not fullscreen: restore the top panel and the reserved space (per the
+        // setting).
+        this._setTopPanelHidden(false);
+        this._applyStruts(this._settings.get_boolean('reserve-space'));
         // If space is reserved, the dock is always visible (never hidden)
         if (this._settings.get_boolean('reserve-space')) {
             this._showDock(true);
