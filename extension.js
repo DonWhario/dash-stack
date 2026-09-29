@@ -2619,6 +2619,8 @@ export default class DockStacksExtension extends Extension {
             const T = 2; // small tolerance in px
             const ws = global.workspace_manager.get_active_workspace();
             const windows = global.display.get_tab_list(Meta.TabList.NORMAL, ws);
+            let hit = false;
+            let dbg = `mon idx=${idx} @${m.x},${m.y} ${m.width}x${m.height} |`;
             for (const w of windows) {
                 if (!w || w.minimized)
                     continue;
@@ -2627,13 +2629,26 @@ export default class DockStacksExtension extends Extension {
                 if (w.get_window_type() !== Meta.WindowType.NORMAL)
                     continue;
                 const r = w.get_frame_rect();
-                if (r.x <= m.x + T && r.y <= m.y + T &&
+                const isFs = w.is_fullscreen ? w.is_fullscreen() : false;
+                const maxd = w.get_maximized ? w.get_maximized() : 0;
+                const wmclass = w.get_wm_class ? w.get_wm_class() : '?';
+                dbg += ` [${wmclass} ${r.x},${r.y} ${r.width}x${r.height} fs=${isFs} max=${maxd}]`;
+                const coversFull = r.x <= m.x + T && r.y <= m.y + T &&
                     r.x + r.width >= m.x + m.width - T &&
-                    r.y + r.height >= m.y + m.height - T)
-                    return true;
+                    r.y + r.height >= m.y + m.height - T;
+                if (isFs || coversFull)
+                    hit = true;
             }
-        } catch (_e) { /* no changes */ }
-        return false;
+            // Diagnostic (logged only when it changes): journalctl --user -f | grep DS-FS
+            if (dbg !== this._fsDebugLast) {
+                this._fsDebugLast = dbg;
+                log(`DS-FS: ${dbg} => hide=${hit}`);
+            }
+            return hit;
+        } catch (e) {
+            logError(e, 'DS-FS');
+            return false;
+        }
     }
 
     _windowOverlapsDock() {
