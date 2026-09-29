@@ -685,9 +685,6 @@ export default class DockStacksExtension extends Extension {
             this._dock.add_child(sep);
         }
 
-        // Immersive-mode toggle: compact, right after the apps button/separator.
-        this._dock.add_child(this._makeImmersiveToggle(iconSize));
-
         // ---- Pinned items: favorites and stacks in a UNIFIED ORDER ----
         // They can be reordered and MIXED freely (no separation).
         const favIds = new Set();
@@ -915,37 +912,6 @@ export default class DockStacksExtension extends Extension {
             const label = `${_('Modo inmersivo')}: ${on ? _('Activado') : _('Desactivado')}`;
             Main.osdWindowManager.show(Main.layoutManager.primaryIndex, icon, label, null);
         } catch (_e) { /* OSD is optional */ }
-    }
-
-    // Compact dock toggle for immersive mode (next to the apps button). Uses the
-    // on.png / off.png pill images from data/, switching with the state.
-    _makeImmersiveToggle(iconSize) {
-        const h = Math.max(18, Math.round(iconSize * 0.7));
-        const w = Math.round((h * 423) / 225);   // on/off images are 423x225
-        const img = new St.Bin({style_class: 'dock-immersive-img'});
-        img.set_size(w, h);
-        const btn = new St.Button({
-            style_class: 'dock-immersive-toggle',
-            can_focus: true,
-            child: img,
-        });
-        const uriFor = (on) =>
-            Gio.File.new_for_path(`${this.path}/data/${on ? 'on' : 'off'}.png`).get_uri();
-        const sync = () => {
-            const on = this._settings.get_boolean('immersive-fullscreen');
-            img.set_style(
-                `background-image: url("${uriFor(on)}"); ` +
-                'background-size: contain; background-position: center;');
-        };
-        sync();
-        btn.connect('clicked', () => this._toggleImmersive());
-        this._attachTooltip(btn, _('Modo inmersivo (Ctrl+Shift+Espacio)'));
-        // Keep the toggle in sync with the setting (shortcut, prefs, other click).
-        const changedId = this._settings.connect('changed::immersive-fullscreen', () => sync());
-        btn.connect('destroy', () => {
-            try { this._settings.disconnect(changedId); } catch (_e) { /* ok */ }
-        });
-        return btn;
     }
 
     _menuSide() {

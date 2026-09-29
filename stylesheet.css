@@ -644,14 +644,3 @@
     padding: 6px 2px 0 2px;
 }
 
-/* Compact immersive-mode toggle in the dock (uses on.png / off.png) */
-.dock-immersive-toggle {
-    border-radius: 10px;
-    padding: 3px;
-    margin: 0 2px;
-    transition-duration: 150ms;
-}
-
-.dock-immersive-toggle:hover {
-    background-color: rgba(255, 255, 255, 0.12);
-}
