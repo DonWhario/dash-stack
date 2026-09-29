@@ -25,6 +25,14 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 const CENTER = Clutter.ActorAlign.CENTER;
 
+// Dock background opacity (0..1), kept in sync by the extension so the popups
+// (forecast, calendar) match the dock's opacity.
+let dockOpacity = 0.65;
+export function setDockOpacity(op) {
+    if (typeof op === 'number' && op >= 0 && op <= 1)
+        dockOpacity = op;
+}
+
 function card(extra) {
     return new St.BoxLayout({
         style_class: 'dock-widget ' + (extra || ''),
@@ -366,6 +374,8 @@ function showPopup(content, sourceActor) {
     overlay.grab_key_focus();
 
     overlay.add_child(content);
+    // Match the dock's opacity.
+    content.set_style(`background-color: rgba(30,30,30,${dockOpacity.toFixed(2)});`);
     content.connect('button-press-event', () => Clutter.EVENT_STOP);
     const monitor = Main.layoutManager.primaryMonitor;
     const [, w] = content.get_preferred_width(-1);

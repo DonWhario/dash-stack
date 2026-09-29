@@ -18,7 +18,7 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import {SysTrayManager} from './systray.js';
 import {makeTranslator, resolveLanguage} from './translations.js';
-import {makeWidget} from './widgets.js';
+import {makeWidget, setDockOpacity} from './widgets.js';
 
 // Module-level translator; (re)configured in enable() and when the
 // 'language' key changes. Identity (Spanish) until configured.
@@ -140,6 +140,7 @@ export default class DockStacksExtension extends Extension {
     enable() {
         this._settings = this.getSettings();
         _ = makeTranslator(this._settings);
+        setDockOpacity(this._settings.get_int('background-opacity') / 100);
         this._stackOverlay = null;
         this._stackPopup = null;
         this._stackGrab = null;
@@ -2414,6 +2415,7 @@ export default class DockStacksExtension extends Extension {
         // Opacity via inline style on the background color
         this._dock.set_style(
             `background-color: rgba(30,30,30,${op.toFixed(2)});`);
+        setDockOpacity(op);   // keep the widget popups in sync
         this._relayout();
     }
 
