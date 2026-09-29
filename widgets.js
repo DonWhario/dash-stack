@@ -391,9 +391,6 @@ function showPopup(content, sourceActor) {
 // the weather widget (sourceActor) with a background image.
 function openForecast(sourceActor, lat, lon, name, _) {
     const container = new St.BoxLayout({style_class: 'dock-forecast', vertical: true});
-    container.set_style(
-        `background-image: url("${dataUri('clima.png')}"); background-size: cover; ` +
-        'background-position: center;');
     const header = new St.Label({style_class: 'dock-forecast-title', text: name || _('Clima')});
     container.add_child(header);
     const rows = new St.BoxLayout({style_class: 'dock-forecast-rows', vertical: true});
