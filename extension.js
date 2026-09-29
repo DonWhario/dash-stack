@@ -180,6 +180,8 @@ export default class DockStacksExtension extends Extension {
                 this._applyStyle();
             else if (key === 'autohide' || key === 'intellihide')
                 this._applyAutohide();
+            else if (key === 'immersive-fullscreen')
+                this._updateVisibility();
             else if (key === 'reserve-space')
                 this._applyReserveSpace();
             else if (key === 'disable-dash-to-dock' || key === 'hide-overview-dash' ||
@@ -2628,6 +2630,11 @@ export default class DockStacksExtension extends Extension {
     // maximized windows (the Battle.net launcher, Firefox, etc.), which are
     // indistinguishable from each other and must keep the bars.
     _shouldHideForWindow() {
+        // Opt-in "immersive" behavior. When off, true fullscreen is still
+        // handled by GNOME (trackFullscreen on the chrome + its own top-panel
+        // hiding); we just don't hide for windowed/maximized covering windows.
+        if (!this._settings.get_boolean('immersive-fullscreen'))
+            return false;
         return this._isMonitorInFullscreen() ||
                this._hasFullMonitorWindow();
     }

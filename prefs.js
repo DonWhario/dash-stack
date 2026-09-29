@@ -251,6 +251,14 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         settings.bind('reserve-space', reserveRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         group.add(reserveRow);
 
+        // Immersive fullscreen
+        const immersiveRow = new Adw.SwitchRow({
+            title: _('Modo inmersivo (pantalla completa)'),
+            subtitle: _('Oculta el dock y la barra superior, y libera el espacio, cuando una ventana llena la pantalla (juegos, video, ventanas maximizadas)'),
+        });
+        settings.bind('immersive-fullscreen', immersiveRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+        group.add(immersiveRow);
+
         // Favorites
         const favRow = new Adw.SwitchRow({title: _('Mostrar aplicaciones favoritas')});
         settings.bind('show-favorites', favRow, 'active', Gio.SettingsBindFlags.DEFAULT);

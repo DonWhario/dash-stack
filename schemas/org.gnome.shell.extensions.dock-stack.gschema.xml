@@ -64,6 +64,11 @@
       <summary>Ocultar el dock solo cuando una ventana lo cubre (maximizada/pantalla completa)</summary>
     </key>
 
+    <key name="immersive-fullscreen" type="b">
+      <default>true</default>
+      <summary>Modo inmersivo: ocultar el dock y la barra superior (y liberar el espacio) cuando una ventana enfocada llena la pantalla (juegos, video, ventanas maximizadas)</summary>
+    </key>
+
     <key name="reserve-space" type="b">
       <default>true</default>
       <summary>Reservar el espacio del dock para que las ventanas no se le superpongan</summary>
