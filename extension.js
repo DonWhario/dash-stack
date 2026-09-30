@@ -655,7 +655,6 @@ export default class DockStacksExtension extends Extension {
     _rebuildItems() {
         if (!this._dock)
             return;
-        log('DS-RB: start');
         this._clearWinSignals();
         this._destroyPreview();
         this._hideTooltip();
@@ -692,7 +691,6 @@ export default class DockStacksExtension extends Extension {
         const pinned = this._computePinnedEntries();
         this._pinnedTokens = pinned.map(e => e.token);
         pinned.forEach((entry, index) => {
-            log(`DS-RB: entry ${index} ${entry.kind}`);
             try {
             if (entry.kind === 'fav') {
                 const app = entry.app;
@@ -867,7 +865,6 @@ export default class DockStacksExtension extends Extension {
             this._dock.add_child(this._makeAppsButton(iconSize));
         }
 
-        log(`DS-RB: end children=${this._dock.get_n_children()}`);
         this._relayout();
     }
 
@@ -1019,8 +1016,14 @@ export default class DockStacksExtension extends Extension {
             const [ok, bytes] = GLib.file_get_contents(this._weatherCachePath());
             if (ok) {
                 const v = JSON.parse(new TextDecoder().decode(bytes));
-                if (v && typeof v === 'object')
+                if (v && typeof v === 'object') {
+                    // Drop legacy entries stored as bare strings (old format).
+                    for (const k of Object.keys(v)) {
+                        if (!v[k] || typeof v[k] !== 'object')
+                            delete v[k];
+                    }
                     return v;
+                }
             }
         } catch (_e) { /* no cache yet */ }
         return {};
