@@ -655,6 +655,7 @@ export default class DockStacksExtension extends Extension {
     _rebuildItems() {
         if (!this._dock)
             return;
+        log('DS-RB: start');
         this._clearWinSignals();
         this._destroyPreview();
         this._hideTooltip();
@@ -691,6 +692,8 @@ export default class DockStacksExtension extends Extension {
         const pinned = this._computePinnedEntries();
         this._pinnedTokens = pinned.map(e => e.token);
         pinned.forEach((entry, index) => {
+            log(`DS-RB: entry ${index} ${entry.kind}`);
+            try {
             if (entry.kind === 'fav') {
                 const app = entry.app;
                 favIds.add(app.get_id());
@@ -782,6 +785,9 @@ export default class DockStacksExtension extends Extension {
                 this._dock.add_child(btn);
                 this._stackButtons.push({stack, btn});
             }
+            } catch (e) {
+                logError(e, `Dock Stack: item ${entry && entry.kind} failed`);
+            }
         });
 
         // Running NON-favorite apps: up to 5 icons; the rest go into a fan.
@@ -861,6 +867,7 @@ export default class DockStacksExtension extends Extension {
             this._dock.add_child(this._makeAppsButton(iconSize));
         }
 
+        log(`DS-RB: end children=${this._dock.get_n_children()}`);
         this._relayout();
     }
 
