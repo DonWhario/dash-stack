@@ -429,9 +429,11 @@ function parseIso(s) {
 }
 
 // Rich weather popup (current + hourly + 5-day) shown next to the widget.
-function openForecast(sourceActor, lat, lon, name, _) {
+function openForecast(sourceActor, lat, lon, name, _, hooks, spec) {
     const now = GLib.DateTime.new_now_local();
     const panelW = Math.max(sourceActor && sourceActor.width ? sourceActor.width : 0, 270);
+    const cache = (hooks && spec && spec.id && hooks.getCache(spec.id)) || {};
+    const fc = cache.fc || null;   // last shown forecast (from memory)
 
     const container = new St.BoxLayout({style_class: 'dock-forecast', vertical: true});
     container.set_width(panelW);
@@ -440,14 +442,14 @@ function openForecast(sourceActor, lat, lon, name, _) {
     const head = new St.BoxLayout({style_class: 'dock-fc-head', vertical: true});
     const locRow = new St.BoxLayout({style_class: 'dock-fc-loc'});
     locRow.add_child(new St.Icon({icon_name: 'find-location-symbolic', icon_size: 14}));
-    locRow.add_child(new St.Label({style_class: 'dock-fc-loc-label', text: name || _('Clima')}));
+    locRow.add_child(new St.Label({style_class: 'dock-fc-loc-label', text: cache.title || name || _('Clima')}));
     head.add_child(locRow);
 
     const bigRow = new St.BoxLayout({style_class: 'dock-fc-bigrow'});
-    const bigTemp = new St.Label({style_class: 'dock-fc-big', text: '…', y_align: CENTER});
+    const bigTemp = new St.Label({style_class: 'dock-fc-big', text: (fc && fc.cur && fc.cur.temp) || '…', y_align: CENTER});
     const condBox = new St.BoxLayout({vertical: true, x_expand: true, x_align: Clutter.ActorAlign.END, y_align: CENTER});
-    const condIcon = new St.Icon({style_class: 'dock-fc-cond-icon', icon_name: 'weather-clear-symbolic', icon_size: 34, x_align: Clutter.ActorAlign.END});
-    const condLabel = new St.Label({style_class: 'dock-fc-cond', text: '', x_align: Clutter.ActorAlign.END});
+    const condIcon = new St.Icon({style_class: 'dock-fc-cond-icon', icon_name: (fc && fc.cur && fc.cur.icon) || 'weather-clear-symbolic', icon_size: 34, x_align: Clutter.ActorAlign.END});
+    const condLabel = new St.Label({style_class: 'dock-fc-cond', text: (fc && fc.cur && fc.cur.cond) || '', x_align: Clutter.ActorAlign.END});
     condBox.add_child(condIcon);
     condBox.add_child(condLabel);
     bigRow.add_child(bigTemp);
@@ -455,17 +457,17 @@ function openForecast(sourceActor, lat, lon, name, _) {
     head.add_child(bigRow);
 
     const details = new St.BoxLayout({style_class: 'dock-fc-details'});
-    const mkDetail = (icon) => {
+    const mkDetail = (icon, val) => {
         const b = new St.BoxLayout({style_class: 'dock-fc-detail', x_expand: true});
         b.add_child(new St.Icon({icon_name: icon, icon_size: 13}));
-        const l = new St.Label({style_class: 'dock-fc-detail-label', text: '—', y_align: CENTER});
+        const l = new St.Label({style_class: 'dock-fc-detail-label', text: val || '—', y_align: CENTER});
         b.add_child(l);
         details.add_child(b);
         return l;
     };
-    const windL = mkDetail('weather-windy-symbolic');
-    const pressL = mkDetail('daytime-sunset-symbolic');
-    const humL = mkDetail('weather-showers-scattered-symbolic');
+    const windL = mkDetail('weather-windy-symbolic', fc && fc.cur && fc.cur.wind);
+    const pressL = mkDetail('daytime-sunset-symbolic', fc && fc.cur && fc.cur.press);
+    const humL = mkDetail('weather-showers-scattered-symbolic', fc && fc.cur && fc.cur.hum);
     head.add_child(details);
     container.add_child(head);
 
@@ -473,17 +475,18 @@ function openForecast(sourceActor, lat, lon, name, _) {
     const hoursBox = new St.BoxLayout({style_class: 'dock-fc-hours'});
     const hourRefs = [];
     const offsets = [0, 3, 6, 9];
-    for (const off of offsets) {
-        const col = new St.BoxLayout({style_class: 'dock-fc-hour', vertical: true, x_expand: true});
+    offsets.forEach((off, k) => {
+        const cell = new St.BoxLayout({style_class: 'dock-fc-hour', vertical: true, x_expand: true});
         const ht = new St.Label({style_class: 'dock-fc-htime', text: now.add_hours(off).format('%H:00'), x_align: CENTER});
-        const hi = new St.Icon({icon_name: 'weather-clear-symbolic', icon_size: 18, x_align: CENTER});
-        const hp = new St.Label({style_class: 'dock-fc-htemp', text: '…', x_align: CENTER});
-        col.add_child(ht);
-        col.add_child(hi);
-        col.add_child(hp);
-        hoursBox.add_child(col);
+        const chc = fc && fc.hours && fc.hours[k];
+        const hi = new St.Icon({icon_name: (chc && chc.icon) || 'weather-clear-symbolic', icon_size: 18, x_align: CENTER});
+        const hp = new St.Label({style_class: 'dock-fc-htemp', text: (chc && chc.temp) || '…', x_align: CENTER});
+        cell.add_child(ht);
+        cell.add_child(hi);
+        cell.add_child(hp);
+        hoursBox.add_child(cell);
         hourRefs.push({hi, hp});
-    }
+    });
     container.add_child(hoursBox);
 
     // ---- Daily (5 days) ----
@@ -491,6 +494,7 @@ function openForecast(sourceActor, lat, lon, name, _) {
     const dayRefs = [];
     for (let i = 0; i < 5; i++) {
         const dt = now.add_days(i);
+        const cd = fc && fc.days && fc.days[i];
         const row = new St.BoxLayout({style_class: 'dock-fc-drow'});
         const dn = new St.Label({
             style_class: 'dock-fc-dname',
@@ -499,9 +503,9 @@ function openForecast(sourceActor, lat, lon, name, _) {
             x_align: Clutter.ActorAlign.START,
             y_align: CENTER,
         });
-        const di = new St.Icon({style_class: 'dock-forecast-icon', icon_name: 'weather-clear-symbolic', icon_size: 20});
-        const dmax = new St.Label({style_class: 'dock-fc-dmax', text: '…', y_align: CENTER});
-        const dmin = new St.Label({style_class: 'dock-fc-dmin', text: '', y_align: CENTER});
+        const di = new St.Icon({style_class: 'dock-forecast-icon', icon_name: (cd && cd.icon) || 'weather-clear-symbolic', icon_size: 20});
+        const dmax = new St.Label({style_class: 'dock-fc-dmax', text: (cd && cd.max) || '…', y_align: CENTER});
+        const dmin = new St.Label({style_class: 'dock-fc-dmin', text: (cd && cd.min) || '', y_align: CENTER});
         row.add_child(dn);
         row.add_child(di);
         row.add_child(dmax);
@@ -514,8 +518,9 @@ function openForecast(sourceActor, lat, lon, name, _) {
     showPopup(container, sourceActor);
 
     if (lat == null || lon == null) {
-        bigTemp.text = _('sin datos');
-        return;
+        if (!fc)
+            bigTemp.text = _('sin datos');
+        return; // no coords: keep whatever is cached
     }
 
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
@@ -527,20 +532,26 @@ function openForecast(sourceActor, lat, lon, name, _) {
     try {
         msg = Soup.Message.new('GET', url);
     } catch (_e) {
-        bigTemp.text = _('sin datos');
-        return;
+        return; // keep cached
     }
     session.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null, (s, res) => {
         try {
             const bytes = session.send_and_read_finish(res);
             const data = JSON.parse(new TextDecoder().decode(bytes.get_data()));
             const cur = data.current;
-            bigTemp.text = `${Math.round(cur.temperature_2m)}°`;
-            condIcon.icon_name = wmoIcon(cur.weather_code);
-            condLabel.text = wmoText(cur.weather_code, _);
-            windL.text = `${Math.round(cur.wind_speed_10m)} km/h`;
-            pressL.text = `${Math.round(cur.surface_pressure)} hPa`;
-            humL.text = `${Math.round(cur.relative_humidity_2m)} %`;
+            const fcNew = {cur: {}, hours: [], days: []};
+            fcNew.cur.temp = `${Math.round(cur.temperature_2m)}°`;
+            fcNew.cur.icon = wmoIcon(cur.weather_code);
+            fcNew.cur.cond = wmoText(cur.weather_code, _);
+            fcNew.cur.wind = `${Math.round(cur.wind_speed_10m)} km/h`;
+            fcNew.cur.press = `${Math.round(cur.surface_pressure)} hPa`;
+            fcNew.cur.hum = `${Math.round(cur.relative_humidity_2m)} %`;
+            bigTemp.text = fcNew.cur.temp;
+            condIcon.icon_name = fcNew.cur.icon;
+            condLabel.text = fcNew.cur.cond;
+            windL.text = fcNew.cur.wind;
+            pressL.text = fcNew.cur.press;
+            humL.text = fcNew.cur.hum;
 
             const h = data.hourly;
             const nowKey = now.format('%Y-%m-%dT%H:00');
@@ -552,19 +563,29 @@ function openForecast(sourceActor, lat, lon, name, _) {
             for (let k = 0; k < hourRefs.length; k++) {
                 const j = idx + offsets[k];
                 if (j < h.time.length) {
-                    hourRefs[k].hi.icon_name = wmoIcon(h.weather_code[j]);
-                    hourRefs[k].hp.text = `${Math.round(h.temperature_2m[j])}°`;
+                    const ic = wmoIcon(h.weather_code[j]);
+                    const tp = `${Math.round(h.temperature_2m[j])}°`;
+                    hourRefs[k].hi.icon_name = ic;
+                    hourRefs[k].hp.text = tp;
+                    fcNew.hours[k] = {icon: ic, temp: tp};
                 }
             }
 
             const d = data.daily;
             for (let i = 0; i < dayRefs.length && i < d.time.length; i++) {
-                dayRefs[i].di.icon_name = wmoIcon(d.weather_code[i]);
-                dayRefs[i].dmax.text = `${Math.round(d.temperature_2m_max[i])}°`;
-                dayRefs[i].dmin.text = `${Math.round(d.temperature_2m_min[i])}°`;
+                const ic = wmoIcon(d.weather_code[i]);
+                const mx = `${Math.round(d.temperature_2m_max[i])}°`;
+                const mn = `${Math.round(d.temperature_2m_min[i])}°`;
+                dayRefs[i].di.icon_name = ic;
+                dayRefs[i].dmax.text = mx;
+                dayRefs[i].dmin.text = mn;
+                fcNew.days[i] = {icon: ic, max: mx, min: mn};
             }
+
+            if (hooks && spec && spec.id)
+                hooks.setCache(spec.id, {fc: fcNew});
         } catch (_e) {
-            bigTemp.text = _('sin datos');
+            // Keep whatever is shown (cached); don't clear on error.
         }
     });
 }
@@ -758,26 +779,35 @@ function makeWeather(spec, iconSize, _, lang, hooks) {
         icon_size: iconSize,
     });
     const loc = (spec.location || '').trim();
+    const cache = (hooks && spec.id && hooks.getCache(spec.id)) || {};
     const {col, title, sub} = textColumn(loc || _('Clima'), '…');
-    setFlexWidth(col, 150);
+    // FIXED width (75% of the previous base of 150), so the widget's size never
+    // changes with the content — the text ellipsizes instead.
+    col.set_width(Math.round(150 * 0.75));
     box.add_child(icon);
     box.add_child(col);
 
-    // Double-click → 5-day forecast (uses coordinates from the last fetch).
-    let lat = null;
-    let lon = null;
-    onDoubleClick(box, () => openForecast(box, lat, lon, title.text, _));
+    // Double-click → 5-day forecast. Coordinates come from the last fetch or
+    // from the cache (so it works right after login too).
+    let lat = cache.lat != null ? cache.lat : null;
+    let lon = cache.lon != null ? cache.lon : null;
+    onDoubleClick(box, () => openForecast(box, lat, lon, title.text, _, hooks, spec));
 
     const setBg = (uri) => box.set_style(
         `background-image: url("${uri}"); background-size: cover; background-position: center;`);
 
-    // Initial background: the last one this widget showed (persisted), so a
-    // rebuild/relaunch keeps the previous look instead of flashing. Only the
-    // very first time ever it falls back to sunny.
+    // Initial state from the cache (last shown), so a rebuild/relaunch keeps the
+    // previous look and text instead of flashing/clearing. Sunny only the very
+    // first time ever.
     const soleado = dataUri('soleado.png');
-    const cachedBg = hooks && spec.id ? hooks.getBg(spec.id) : null;
-    const defaultBg = cachedBg || soleado;
-    setBg(defaultBg);
+    let lastBg = cache.bg || soleado;
+    setBg(lastBg);
+    if (cache.title)
+        title.text = cache.title;
+    if (cache.sub)
+        sub.text = cache.sub;
+    if (cache.icon)
+        icon.icon_name = cache.icon;
 
     // wttr.in returns the description in English by default; request it in the
     // extension's language and read the translated `lang_<code>` field.
@@ -785,7 +815,6 @@ function makeWeather(spec, iconSize, _, lang, hooks) {
 
     const session = new Soup.Session();
     let timer = 0;
-    let lastBg = defaultBg;   // current background URI, to avoid reloading on refresh
 
     const fetch = () => {
         // With a location, use it; empty → wttr.in auto-detects it from the
@@ -800,8 +829,7 @@ function makeWeather(spec, iconSize, _, lang, hooks) {
         try {
             msg = Soup.Message.new('GET', url);
         } catch (_e) {
-            sub.text = _('sin datos');
-            return;
+            return; // keep the last shown info
         }
         session.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null, (s, res) => {
             try {
@@ -813,27 +841,32 @@ function makeWeather(spec, iconSize, _, lang, hooks) {
                     : null;
                 const desc = translated ||
                     (cur.weatherDesc && cur.weatherDesc[0] ? cur.weatherDesc[0].value : '');
-                sub.text = `${cur.temp_C}°C · ${desc}`;
-                icon.icon_name = weatherIcon(cur.weatherCode);
+                const subText = `${cur.temp_C}°C · ${desc}`;
+                const iconName = weatherIcon(cur.weatherCode);
+                sub.text = subText;
+                icon.icon_name = iconName;
+                let titleText = title.text;
                 if (data.nearest_area && data.nearest_area[0]) {
                     const na = data.nearest_area[0];
-                    title.text = na.areaName[0].value;
+                    titleText = na.areaName[0].value;
+                    title.text = titleText;
                     lat = na.latitude;
                     lon = na.longitude;
                 }
-                // Condition background image behind the card content. Only
-                // re-apply it when the condition (image) actually changes, so a
-                // periodic refresh with the same weather doesn't reload the
-                // texture and flicker; persist it as the widget's last look.
+                // Condition background image; only re-apply on change (no flicker).
                 const bg = weatherBgUri(cur.weatherCode);
                 if (bg !== lastBg) {
                     lastBg = bg;
                     setBg(bg);
-                    if (hooks && spec.id)
-                        hooks.setBg(spec.id, bg);
+                }
+                // Persist the last shown snapshot.
+                if (hooks && spec.id) {
+                    hooks.setCache(spec.id, {
+                        bg, title: titleText, sub: subText, icon: iconName, lat, lon,
+                    });
                 }
             } catch (_e) {
-                sub.text = _('sin datos');
+                // Network/parse error: keep the last shown info (don't clear).
             }
         });
     };

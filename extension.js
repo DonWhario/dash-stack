@@ -722,9 +722,10 @@ export default class DockStacksExtension extends Extension {
                 let inst;
                 try {
                     inst = makeWidget(widget, iconSize, _, resolveLanguage(this._settings), {
-                        getBg: (id) => this._weatherCache[id],
-                        setBg: (id, uri) => {
-                            this._weatherCache[id] = uri;
+                        getCache: (id) => this._weatherCache[id] || null,
+                        setCache: (id, patch) => {
+                            this._weatherCache[id] = Object.assign(
+                                {}, this._weatherCache[id] || {}, patch);
                             this._saveWeatherCache();
                         },
                     });
