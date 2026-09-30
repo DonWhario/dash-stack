@@ -772,6 +772,7 @@ function openCalendar(sourceActor) {
 }
 
 function makeWeather(spec, iconSize, _, lang, hooks) {
+    log('DS-W: 1 begin');
     const box = card('dock-widget-weather');
     const icon = new St.Icon({
         style_class: 'dock-widget-art',
@@ -780,6 +781,7 @@ function makeWeather(spec, iconSize, _, lang, hooks) {
     });
     const loc = (spec.location || '').trim();
     const cache = (hooks && spec.id && hooks.getCache(spec.id)) || {};
+    log(`DS-W: 2 cache type=${typeof cache}`);
     const {col, title, sub} = textColumn(loc || _('Clima'), '…');
     // FIXED width (75% of the previous base of 150), so the widget's size never
     // changes with the content — the text ellipsizes instead.
@@ -799,9 +801,11 @@ function makeWeather(spec, iconSize, _, lang, hooks) {
     // Initial state from the cache (last shown), so a rebuild/relaunch keeps the
     // previous look and text instead of flashing/clearing. Sunny only the very
     // first time ever.
+    log('DS-W: 3 predbg');
     const soleado = dataUri('soleado.png');
     let lastBg = cache.bg || soleado;
     setBg(lastBg);
+    log('DS-W: 4 bg set');
     if (cache.title)
         title.text = cache.title;
     if (cache.sub)
@@ -871,8 +875,11 @@ function makeWeather(spec, iconSize, _, lang, hooks) {
         });
     };
 
+    log('DS-W: 5 pre-fetch');
     fetch();
+    log('DS-W: 6 post-fetch');
     timer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 900, () => { fetch(); return GLib.SOURCE_CONTINUE; });
+    log('DS-W: 7 end');
 
     return {
         actor: box,
