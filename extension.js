@@ -156,10 +156,12 @@ export default class DockStacksExtension extends Extension {
         this._appGridClosing = false;
         this._appGridPanel = null;
         this._appGridBg = null;
+        this._panelIslandActive = false;
 
         this._buildDock();
         this._applyGnomeIntegration();
         this._applySysTray();
+        this._applyPanelIsland();
         this._playStartupSound();
 
         // Keyboard shortcut (Ctrl+Shift+Space) to toggle immersive mode.
@@ -201,6 +203,8 @@ export default class DockStacksExtension extends Extension {
                 this._applyGnomeIntegration();
             else if (key === 'systray')
                 this._applySysTray();
+            else if (key === 'panel-island')
+                this._applyPanelIsland();
         });
 
         // React to favorites / installed-apps changes
@@ -343,6 +347,7 @@ export default class DockStacksExtension extends Extension {
         }
         this._closeStack();
         this._revertGnomeIntegration();
+        this._revertPanelIsland();
         this._cancelPreviewTimers();
         this._destroyPreview();
         this._hideTooltip();
@@ -427,6 +432,51 @@ export default class DockStacksExtension extends Extension {
             this._sysTray.disable();
             this._sysTray = null;
         }
+    }
+
+    // Top-bar "island": keep visible ONLY the right status indicators (WiFi,
+    // keyboard layout, volume/power quick-settings) as a rounded pill, and make
+    // the rest of the panel transparent. The left box (Activities + legacy tray)
+    // and the center box (clock) are hidden while active.
+    _applyPanelIsland() {
+        const on = this._settings.get_boolean('panel-island');
+        if (!on) {
+            this._revertPanelIsland();
+            return;
+        }
+        const panel = Main.panel;
+        if (!panel)
+            return;
+        try {
+            panel.add_style_class_name('dock-panel-island');
+            if (panel._rightBox)
+                panel._rightBox.add_style_class_name('dock-panel-right-island');
+            if (panel._leftBox)
+                panel._leftBox.hide();
+            if (panel._centerBox)
+                panel._centerBox.hide();
+            this._panelIslandActive = true;
+        } catch (e) {
+            logError(e, 'Dock Stack: panel island');
+        }
+    }
+
+    _revertPanelIsland() {
+        const panel = Main.panel;
+        if (!panel) {
+            this._panelIslandActive = false;
+            return;
+        }
+        try {
+            panel.remove_style_class_name('dock-panel-island');
+            if (panel._rightBox)
+                panel._rightBox.remove_style_class_name('dock-panel-right-island');
+            if (panel._leftBox)
+                panel._leftBox.show();
+            if (panel._centerBox)
+                panel._centerBox.show();
+        } catch (_e) { /* ignore */ }
+        this._panelIslandActive = false;
     }
 
     // Sound when the extension loads (configurable)

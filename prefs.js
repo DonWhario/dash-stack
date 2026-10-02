@@ -259,6 +259,14 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         settings.bind('immersive-fullscreen', immersiveRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         group.add(immersiveRow);
 
+        // Top-bar island
+        const islandRow = new Adw.SwitchRow({
+            title: _('Barra superior como isla'),
+            subtitle: _('Deja visible solo el bloque de indicadores de la derecha (WiFi, idioma, volumen/energía) con esquinas redondeadas; el resto de la barra queda transparente'),
+        });
+        settings.bind('panel-island', islandRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+        group.add(islandRow);
+
         // Favorites
         const favRow = new Adw.SwitchRow({title: _('Mostrar aplicaciones favoritas')});
         settings.bind('show-favorites', favRow, 'active', Gio.SettingsBindFlags.DEFAULT);

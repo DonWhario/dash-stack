@@ -79,6 +79,11 @@
       <summary>Reservar el espacio del dock para que las ventanas no se le superpongan</summary>
     </key>
 
+    <key name="panel-island" type="b">
+      <default>false</default>
+      <summary>Barra superior como isla: dejar visible solo el bloque de indicadores de la derecha (WiFi, idioma, volumen/energía) con fondo redondeado; el resto de la barra queda transparente</summary>
+    </key>
+
     <key name="startup-sound" type="b">
       <default>false</default>
       <summary>Reproducir un sonido al cargar la extensión (al iniciar sesión)</summary>

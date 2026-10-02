@@ -644,3 +644,27 @@
     padding: 6px 2px 0 2px;
 }
 
+
+/* --------------------------------------------------------------------------
+ * Barra superior como "isla": solo el bloque de indicadores de la derecha.
+ * El panel completo queda transparente y únicamente el bloque derecho recibe
+ * un fondo redondeado (esquinas inferiores) tipo pastilla.
+ * -------------------------------------------------------------------------- */
+#panel.dock-panel-island {
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+#panel.dock-panel-island .panel-corner {
+    -panel-corner-opacity: 0;
+    background-color: transparent;
+}
+
+.dock-panel-right-island {
+    background-color: rgba(0, 0, 0, 0.55);
+    border-radius: 0 0 16px 16px;
+    padding-left: 6px;
+    padding-right: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
