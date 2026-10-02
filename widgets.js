@@ -269,24 +269,18 @@ function setFlexWidth(actor, base) {
 
 // Calls `cb` on a left double-click of `actor`. Detected manually by timing two
 // presses, because this Clutter build's event has no get_click_count().
-function onDoubleClick(actor, cb) {
-    let last = 0;
-    actor.connect('button-press-event', (_a, ev) => {
+// Single left-click handler. Fires on button-release (not press) so it does
+// NOT trigger while dragging the widget to reorder it: a drag (DND) takes a
+// pointer grab and the actor's own 'button-release-event' only arrives on a
+// plain click where no drag began.
+function onClick(actor, cb) {
+    actor.connect('button-release-event', (_a, ev) => {
         let button = 1;
         try { button = ev.get_button(); } catch (_e) { /* keep default */ }
         if (button !== 1)
             return Clutter.EVENT_PROPAGATE;
-        let t = 0;
-        try { t = ev.get_time(); } catch (_e) { t = 0; }
-        if (!t)
-            t = Math.floor(GLib.get_monotonic_time() / 1000);
-        if (last && t - last < 400) {
-            last = 0;
-            cb();
-            return Clutter.EVENT_STOP;
-        }
-        last = t;
-        return Clutter.EVENT_PROPAGATE;
+        cb();
+        return Clutter.EVENT_STOP;
     });
 }
 
@@ -791,11 +785,11 @@ function makeWeather(spec, iconSize, _, lang, hooks) {
     box.add_child(icon);
     box.add_child(col);
 
-    // Double-click → 5-day forecast. Coordinates come from the last fetch or
+    // Single click → 5-day forecast. Coordinates come from the last fetch or
     // from the cache (so it works right after login too).
     let lat = cache.lat != null ? cache.lat : null;
     let lon = cache.lon != null ? cache.lon : null;
-    onDoubleClick(box, () => openForecast(box, lat, lon, title.text, _, hooks, spec));
+    onClick(box, () => openForecast(box, lat, lon, title.text, _, hooks, spec));
 
     const setBg = (uri) => box.set_style(
         `background-image: url("${uri}"); background-size: cover; background-position: center;`);
@@ -1009,8 +1003,8 @@ function makeClock(spec, iconSize, _) {
     info.add_child(sub);
     box.add_child(info);
 
-    // Double-click → open our own month calendar (above the clock widget).
-    onDoubleClick(box, () => openCalendar(box));
+    // Single click → open our own month calendar (above the clock widget).
+    onClick(box, () => openCalendar(box));
 
     const fmt24 = spec.format24 !== false;   // default 24h
     const showDate = spec.showDate !== false; // default show date
