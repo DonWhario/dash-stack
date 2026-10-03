@@ -219,9 +219,10 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         });
         group.add(posRow);
 
-        // Opacity
+        // Opacity (applies to the dock AND the top-bar island)
         const opRow = new Adw.SpinRow({
             title: _('Opacidad del fondo (%)'),
+            subtitle: _('Aplica al dock y a la isla de la barra superior'),
             adjustment: new Gtk.Adjustment({lower: 0, upper: 100, step_increment: 5, value: settings.get_int('background-opacity')}),
         });
         settings.bind('background-opacity', opRow, 'value', Gio.SettingsBindFlags.DEFAULT);

@@ -449,8 +449,13 @@ export default class DockStacksExtension extends Extension {
             return;
         try {
             panel.add_style_class_name('dock-panel-island');
-            if (panel._rightBox)
+            if (panel._rightBox) {
                 panel._rightBox.add_style_class_name('dock-panel-right-island');
+                // Same background opacity as the dock (maintainer-configurable
+                // via the 'background-opacity' setting). Set inline so it tracks
+                // the slider; the class only carries radius/padding/shadow.
+                panel._rightBox.set_style(this._islandBgStyle());
+            }
             if (panel._leftBox)
                 panel._leftBox.hide();
             if (panel._centerBox)
@@ -461,6 +466,12 @@ export default class DockStacksExtension extends Extension {
         }
     }
 
+    // Background color/opacity for the top-bar island, matched to the dock.
+    _islandBgStyle() {
+        const op = this._settings.get_int('background-opacity') / 100;
+        return `background-color: rgba(30,30,30,${op.toFixed(2)});`;
+    }
+
     _revertPanelIsland() {
         const panel = Main.panel;
         if (!panel) {
@@ -469,8 +480,10 @@ export default class DockStacksExtension extends Extension {
         }
         try {
             panel.remove_style_class_name('dock-panel-island');
-            if (panel._rightBox)
+            if (panel._rightBox) {
                 panel._rightBox.remove_style_class_name('dock-panel-right-island');
+                panel._rightBox.set_style(null);   // clear inline background
+            }
             if (panel._leftBox)
                 panel._leftBox.show();
             if (panel._centerBox)
@@ -2547,6 +2560,9 @@ export default class DockStacksExtension extends Extension {
         this._dock.set_style(
             `background-color: rgba(30,30,30,${op.toFixed(2)});`);
         setDockOpacity(op);   // keep the widget popups in sync
+        // Keep the top-bar island at the same opacity as the dock.
+        if (this._panelIslandActive && Main.panel && Main.panel._rightBox)
+            Main.panel._rightBox.set_style(this._islandBgStyle());
         this._relayout();
     }
 
