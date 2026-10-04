@@ -437,7 +437,7 @@ function openForecast(sourceActor, lat, lon, name, _, hooks, spec) {
     const head = new St.BoxLayout({style_class: 'dock-fc-head', vertical: true});
     const locRow = new St.BoxLayout({style_class: 'dock-fc-loc'});
     locRow.add_child(new St.Icon({icon_name: 'find-location-symbolic', icon_size: 14}));
-    locRow.add_child(new St.Label({style_class: 'dock-fc-loc-label', text: cache.title || name || _('Clima')}));
+    locRow.add_child(new St.Label({style_class: 'dock-fc-loc-label', text: name || cache.title || _('Clima')}));
     head.add_child(locRow);
 
     const bigRow = new St.BoxLayout({style_class: 'dock-fc-bigrow'});
@@ -774,11 +774,16 @@ function makeWeather(spec, iconSize, _, lang, hooks) {
         icon_size: iconSize,
     });
     const loc = (spec.location || '').trim();
+    // Friendly label for a MANUAL location: the part before the first comma,
+    // e.g. "Santiago, Chile" → "Santiago". Empty when the location is automatic
+    // (by IP). We show this instead of wttr.in's resolved "nearest area" name
+    // (which for Santiago can be a sector like "Lo Valdivieso").
+    const manualLabel = loc ? loc.split(',')[0].trim() : '';
     // Must be an object; older versions stored a bare string here, which would
     // make e.g. cache.sub resolve to String.prototype.sub (a function).
     const rawCache = hooks && spec.id ? hooks.getCache(spec.id) : null;
     const cache = rawCache && typeof rawCache === 'object' ? rawCache : {};
-    const {col, title, sub} = textColumn(loc || _('Clima'), '…');
+    const {col, title, sub} = textColumn(manualLabel || _('Clima'), '…');
     // FIXED width (75% of the previous base of 150), so the widget's size never
     // changes with the content — the text ellipsizes instead.
     col.set_width(Math.round(150 * 0.75));
@@ -800,7 +805,11 @@ function makeWeather(spec, iconSize, _, lang, hooks) {
     const soleado = dataUri('soleado.png');
     let lastBg = cache.bg || soleado;
     setBg(lastBg);
-    if (cache.title)
+    // For a manual location keep the user's label; only trust the cached title
+    // when the location is automatic (so a stale resolved name doesn't stick).
+    if (manualLabel)
+        title.text = manualLabel;
+    else if (cache.title)
         title.text = cache.title;
     if (cache.sub)
         sub.text = cache.sub;
@@ -843,14 +852,17 @@ function makeWeather(spec, iconSize, _, lang, hooks) {
                 const iconName = weatherIcon(cur.weatherCode);
                 sub.text = subText;
                 icon.icon_name = iconName;
-                let titleText = title.text;
+                let titleText = manualLabel || title.text;
                 if (data.nearest_area && data.nearest_area[0]) {
                     const na = data.nearest_area[0];
-                    titleText = na.areaName[0].value;
-                    title.text = titleText;
+                    // Use wttr.in's resolved area name ONLY for automatic (IP)
+                    // location; with a manual location keep the user's label.
+                    if (!manualLabel)
+                        titleText = na.areaName[0].value;
                     lat = na.latitude;
                     lon = na.longitude;
                 }
+                title.text = titleText;
                 // Condition background image; only re-apply on change (no flicker).
                 const bg = weatherBgUri(cur.weatherCode);
                 if (bg !== lastBg) {

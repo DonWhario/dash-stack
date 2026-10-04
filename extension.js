@@ -1468,9 +1468,12 @@ export default class DockStacksExtension extends Extension {
                 `background-image: url("${info.bg}"); background-size: cover; background-position: center;`);
         }
 
+        // Prefer the user's manual label ("Santiago, Chile" → "Santiago") over a
+        // possibly stale cached area name, matching the widget's own title.
+        const manualLabel = (w.location || '').split(',')[0].trim();
         const loc = new St.Label({
             style_class: 'dock-appgrid-weather-loc',
-            text: info.title || w.location || _('Clima'),
+            text: manualLabel || info.title || _('Clima'),
             x_expand: true,
             x_align: Clutter.ActorAlign.START,
         });
