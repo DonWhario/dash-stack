@@ -158,10 +158,12 @@ export default class DockStacksExtension extends Extension {
         this._appGridBg = null;
         this._panelIslandActive = false;
 
+        this._startupCompleteId = 0;
         this._buildDock();
         this._applyGnomeIntegration();
         this._applySysTray();
         this._applyPanelIsland();
+        this._applyNoOverviewStartup();
         this._playStartupSound();
 
         // Keyboard shortcut (Ctrl+Shift+Space) to toggle immersive mode.
@@ -348,6 +350,10 @@ export default class DockStacksExtension extends Extension {
         this._closeStack();
         this._revertGnomeIntegration();
         this._revertPanelIsland();
+        if (this._startupCompleteId) {
+            try { Main.layoutManager.disconnect(this._startupCompleteId); } catch (_e) { /* ok */ }
+            this._startupCompleteId = 0;
+        }
         this._cancelPreviewTimers();
         this._destroyPreview();
         this._hideTooltip();
@@ -463,6 +469,24 @@ export default class DockStacksExtension extends Extension {
             this._panelIslandActive = true;
         } catch (e) {
             logError(e, 'Dock Stack: panel island');
+        }
+    }
+
+    // Land on the desktop at login instead of the Activities overview. GNOME
+    // (or another extension) can leave the overview open when the session
+    // finishes starting; 'startup-complete' fires once per boot, so hiding the
+    // overview there targets startup only and never fights a manual re-enable.
+    _applyNoOverviewStartup() {
+        if (!this._settings.get_boolean('no-overview-startup'))
+            return;
+        try {
+            this._startupCompleteId = Main.layoutManager.connect(
+                'startup-complete', () => {
+                    if (Main.overview.visible)
+                        Main.overview.hide();
+                });
+        } catch (e) {
+            logError(e, 'Dock Stack: no-overview-startup');
         }
     }
 

@@ -268,6 +268,14 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         settings.bind('panel-island', islandRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         group.add(islandRow);
 
+        // No overview at startup
+        const noOvRow = new Adw.SwitchRow({
+            title: _('No abrir Actividades al iniciar sesión'),
+            subtitle: _('Cierra la vista de Actividades al terminar el arranque para aterrizar en el escritorio (efecto en el próximo inicio de sesión)'),
+        });
+        settings.bind('no-overview-startup', noOvRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+        group.add(noOvRow);
+
         // Favorites
         const favRow = new Adw.SwitchRow({title: _('Mostrar aplicaciones favoritas')});
         settings.bind('show-favorites', favRow, 'active', Gio.SettingsBindFlags.DEFAULT);

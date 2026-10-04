@@ -84,6 +84,11 @@
       <summary>Barra superior como isla: dejar visible solo el bloque de indicadores de la derecha (WiFi, idioma, volumen/energía) con fondo redondeado; el resto de la barra queda transparente</summary>
     </key>
 
+    <key name="no-overview-startup" type="b">
+      <default>true</default>
+      <summary>No abrir la vista de Actividades al iniciar sesión: cerrar el overview cuando termina el arranque para aterrizar en el escritorio</summary>
+    </key>
+
     <key name="startup-sound" type="b">
       <default>false</default>
       <summary>Reproducir un sonido al cargar la extensión (al iniciar sesión)</summary>
