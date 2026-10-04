@@ -408,22 +408,52 @@ export class SysTrayManager {
         this._hostId = 0;
         this._regId = 0;
         this._hostRegistered = false;
+        this._active = false;
     }
 
     enable() {
+        this._active = false;
         this._nodeInfo = Gio.DBusNodeInfo.new_for_xml(WATCHER_XML);
         this._ifaceInfo = this._nodeInfo.interfaces[0];
+
+        // If another StatusNotifierWatcher is already running (e.g. the
+        // AppIndicator/KStatusNotifierItem Support extension), STAND DOWN: that
+        // host already shows the SNI tray. Running two watchers in the same
+        // gnome-shell process duplicates icons and makes our register_object()
+        // fail on the shared D-Bus connection (the "object already exported"
+        // error). We simply let the other host do the job.
+        if (this._watcherAlreadyOwned()) {
+            log('Dock Stack systray: ya hay otro StatusNotifierWatcher activo; ' +
+                'no se inicia (lo gestiona la otra extensión).');
+            return;
+        }
 
         this._ownId = Gio.bus_own_name(
             Gio.BusType.SESSION, WATCHER_NAME,
             Gio.BusNameOwnerFlags.NONE,
-            (conn) => this._onBusAcquired(conn),
-            () => this._onNameAcquired(),
-            () => { /* nombre perdido: otro watcher existe */ });
+            (conn) => { this._conn = conn; },       // bus acquired: just keep the connection
+            (conn) => this._onNameAcquired(conn),   // name acquired: become watcher + host
+            () => this._onNameLost());              // name lost: another watcher won the race
     }
 
-    _onBusAcquired(conn) {
+    // True if someone already owns org.kde.StatusNotifierWatcher.
+    _watcherAlreadyOwned() {
+        try {
+            const res = Gio.DBus.session.call_sync(
+                'org.freedesktop.DBus', '/org/freedesktop/DBus',
+                'org.freedesktop.DBus', 'NameHasOwner',
+                new GLib.Variant('(s)', [WATCHER_NAME]),
+                new GLib.VariantType('(b)'), Gio.DBusCallFlags.NONE, -1, null);
+            return res.deep_unpack()[0] === true;
+        } catch (_e) {
+            return false;
+        }
+    }
+
+    _onNameAcquired(conn) {
         this._conn = conn;
+        // Export the watcher object only now that we actually OWN the name, so a
+        // losing race never calls register_object() on an already-exported path.
         try {
             this._regId = conn.register_object(
                 WATCHER_PATH, this._ifaceInfo,
@@ -431,12 +461,15 @@ export class SysTrayManager {
                     this._onMethod(c, sender, method, params, invocation),
                 (c, sender, path, iface, prop) => this._onGetProp(prop),
                 null);
-        } catch (e) {
-            logError(e, 'Dock Stack systray: register_object');
+        } catch (_e) {
+            // Another object is already exported at this path on the shared
+            // connection: stand down quietly instead of spamming the log.
+            log('Dock Stack systray: el watcher ya está exportado por otra ' +
+                'extensión; se omite.');
+            return;
         }
-    }
+        this._active = true;
 
-    _onNameAcquired() {
         // Register ourselves as host (unique name)
         const hostName = `org.kde.StatusNotifierHost-DockStack-${GLib.uuid_string_random().replace(/-/g, '')}`;
         this._hostId = Gio.bus_own_name(
@@ -447,6 +480,15 @@ export class SysTrayManager {
                 this._emit('StatusNotifierHostRegistered', null);
             },
             null);
+    }
+
+    // Another watcher grabbed the name first (startup race): release cleanly.
+    _onNameLost() {
+        if (this._regId && this._conn) {
+            try { this._conn.unregister_object(this._regId); } catch (_e) { /* ok */ }
+            this._regId = 0;
+        }
+        this._active = false;
     }
 
     _onMethod(conn, sender, method, params, invocation) {
