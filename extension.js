@@ -1434,6 +1434,92 @@ export default class DockStacksExtension extends Extension {
         return tokens.some(t => list.includes(t));
     }
 
+    // Compact weather card for the bottom of the app-grid sidebar. Reuses the
+    // data cached by the weather widget (location, temperature, condition, icon,
+    // background and — if the forecast was opened — wind/pressure/humidity), so
+    // it shows the same info without extra network calls. Returns null when
+    // there is no weather widget configured.
+    _appGridWeatherCard() {
+        const widgets = safeParseWidgets(this._settings.get_string('widgets'));
+        const w = widgets.find(x => x && x.type === 'weather');
+        if (!w)
+            return null;
+        const info = (this._weatherCache && this._weatherCache[w.id]) || {};
+        const cur = info.fc && info.fc.cur ? info.fc.cur : null;
+
+        // Split the widget's "18°C · Lluvia" subtitle into temp + condition.
+        let subTemp = '', subCond = '';
+        if (typeof info.sub === 'string' && info.sub.includes('·')) {
+            const parts = info.sub.split('·');
+            subTemp = parts[0].trim();
+            subCond = parts.slice(1).join('·').trim();
+        } else if (typeof info.sub === 'string') {
+            subCond = info.sub.trim();
+        }
+        const bigTemp = (cur && cur.temp) || subTemp || '…';
+
+        const card = new St.BoxLayout({
+            style_class: 'dock-appgrid-weather',
+            orientation: Clutter.Orientation.VERTICAL,
+            x_expand: true,
+        });
+        if (info.bg) {
+            card.set_style(
+                `background-image: url("${info.bg}"); background-size: cover; background-position: center;`);
+        }
+
+        const loc = new St.Label({
+            style_class: 'dock-appgrid-weather-loc',
+            text: info.title || w.location || _('Clima'),
+            x_expand: true,
+            x_align: Clutter.ActorAlign.START,
+        });
+        card.add_child(loc);
+
+        const mainRow = new St.BoxLayout({
+            orientation: Clutter.Orientation.HORIZONTAL,
+            x_expand: true,
+        });
+        mainRow.add_child(new St.Label({
+            style_class: 'dock-appgrid-weather-temp',
+            text: bigTemp,
+            x_expand: true,
+            x_align: Clutter.ActorAlign.START,
+            y_align: Clutter.ActorAlign.CENTER,
+        }));
+        const condBox = new St.BoxLayout({
+            orientation: Clutter.Orientation.VERTICAL,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        if (info.icon) {
+            condBox.add_child(new St.Icon({
+                style_class: 'dock-appgrid-weather-icon',
+                icon_name: info.icon,
+                icon_size: 30,
+                x_align: Clutter.ActorAlign.END,
+            }));
+        }
+        if (subCond) {
+            condBox.add_child(new St.Label({
+                style_class: 'dock-appgrid-weather-cond',
+                text: subCond,
+                x_align: Clutter.ActorAlign.END,
+            }));
+        }
+        mainRow.add_child(condBox);
+        card.add_child(mainRow);
+
+        if (cur && (cur.wind || cur.press || cur.hum)) {
+            card.add_child(new St.Label({
+                style_class: 'dock-appgrid-weather-det',
+                text: [cur.wind, cur.press, cur.hum].filter(Boolean).join('    '),
+                x_expand: true,
+                x_align: Clutter.ActorAlign.START,
+            }));
+        }
+        return card;
+    }
+
     // -------------------------------------------- custom apps grid
     _openAppGrid(srcBtn) {
         this._closeAppGrid();
@@ -1588,8 +1674,13 @@ export default class DockStacksExtension extends Extension {
             sidebarInner.add_child(catBtn);
         }
 
-        // Spacer that pushes the settings button to the bottom
+        // Spacer that pushes the weather card + settings button to the bottom
         sidebarInner.add_child(new St.Widget({y_expand: true}));
+
+        // Weather info at the bottom of the grid (reuses the weather widget data)
+        const weatherCard = this._appGridWeatherCard();
+        if (weatherCard)
+            sidebarInner.add_child(weatherCard);
 
         // Settings button (opens preferences) with a custom icon
         const cfgBtn = new St.Button({
