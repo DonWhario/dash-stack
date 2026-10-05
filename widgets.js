@@ -1637,22 +1637,45 @@ function newsCacheDir() {
     return dir;
 }
 
-function cachedImagePath(url) {
+function newsImageBase(url) {
     const hash = GLib.compute_checksum_for_string(GLib.ChecksumType.MD5, url, -1);
     return GLib.build_filenamev([newsCacheDir(), hash]);
 }
 
-// Downloads `url` once into the news image cache and paints it on `widget`.
+// Picks a file extension from the raw image bytes (St/GdkPixbuf is happier when
+// the cached file has a real image extension).
+function sniffImageExt(b) {
+    if (b.length > 8 && b[0] === 0x89 && b[1] === 0x50) return '.png';
+    if (b.length > 3 && b[0] === 0xFF && b[1] === 0xD8) return '.jpg';
+    if (b.length > 6 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return '.gif';
+    if (b.length > 12 && b[0] === 0x52 && b[1] === 0x49 && b[8] === 0x57 && b[9] === 0x45) return '.webp';
+    if (b.length > 2 && b[0] === 0x42 && b[1] === 0x4D) return '.bmp';
+    return '.jpg';
+}
+
+function existingNewsImage(base) {
+    for (const e of ['.jpg', '.png', '.webp', '.gif', '.bmp']) {
+        const p = base + e;
+        if (GLib.file_test(p, GLib.FileTest.EXISTS))
+            return p;
+    }
+    return null;
+}
+
+// Downloads `url` once into the news image cache (with a real extension) and
+// paints it on `widget`. No get_stage() gate, so cached images also paint
+// during the initial (pre-staged) render.
 function loadNewsImage(session, url, widget) {
     const apply = (path) => {
-        if (!widget.get_stage())
-            return;
-        widget.set_style(
-            `background-image: url("${Gio.File.new_for_path(path).get_uri()}"); ` +
-            'background-size: cover; background-position: center;');
+        try {
+            widget.set_style(
+                `background-image: url("${Gio.File.new_for_path(path).get_uri()}"); ` +
+                'background-size: cover; background-position: center;');
+        } catch (_e) { /* actor gone */ }
     };
-    const path = cachedImagePath(url);
-    if (GLib.file_test(path, GLib.FileTest.EXISTS)) { apply(path); return; }
+    const base = newsImageBase(url);
+    const existing = existingNewsImage(base);
+    if (existing) { apply(existing); return; }
     let msg;
     try { msg = Soup.Message.new('GET', url); } catch (_e) { return; }
     try { msg.request_headers.append('User-Agent', 'Mozilla/5.0'); } catch (_e) { /* ok */ }
@@ -1661,6 +1684,7 @@ function loadNewsImage(session, url, widget) {
             const bytes = session.send_and_read_finish(res);
             const data = bytes.get_data();
             if (data && data.length > 128) {
+                const path = base + sniffImageExt(data);
                 Gio.File.new_for_path(path).replace_contents(
                     data, null, false, Gio.FileCreateFlags.REPLACE_DESTINATION, null);
                 apply(path);
