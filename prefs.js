@@ -943,6 +943,28 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         } else {
             exp.add_row(new Adw.ActionRow({subtitle: _('Sin ajustes. Controla el reproductor activo.')}));
         }
+
+        // Where the widget is shown. Music/news/photos are grid-only; weather,
+        // system and clock can choose dock or the menu grid.
+        const GRID_ONLY = ['mpris', 'news', 'photos'];
+        if (GRID_ONLY.includes(w.type)) {
+            exp.add_row(new Adw.ActionRow({
+                subtitle: _('Este widget solo se muestra en la grilla de menú (en Favoritos, al final).'),
+            }));
+        } else {
+            const placeModel = new Gtk.StringList();
+            placeModel.append(_('Dock (barra)'));
+            placeModel.append(_('Grilla de menú'));
+            const placeRow = new Adw.ComboRow({
+                title: _('Ubicación'),
+                subtitle: _('En el dock se ve compacto; en la grilla, en formato grande'),
+                model: placeModel,
+                selected: w.place === 'grid' ? 1 : 0,
+            });
+            placeRow.connect('notify::selected', () =>
+                this._updateWidget(w.id, {place: placeRow.get_selected() === 1 ? 'grid' : 'dock'}));
+            exp.add_row(placeRow);
+        }
         return exp;
     }
 

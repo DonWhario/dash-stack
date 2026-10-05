@@ -57,7 +57,10 @@ function textColumn(titleText, subText) {
     return {col, title, sub};
 }
 
-export function makeWidget(spec, iconSize, _, lang, hooks) {
+// mode: 'dock' (compact, default) or 'grid' (rich format for the menu grid).
+export function makeWidget(spec, iconSize, _, lang, hooks, mode) {
+    if (mode === 'grid')
+        return makeWidgetGrid(spec, iconSize, _, lang, hooks);
     switch (spec && spec.type) {
     case 'mpris': return makeMpris(spec, iconSize, _);
     case 'weather': return makeWeather(spec, iconSize, _, lang, hooks);
@@ -66,6 +69,20 @@ export function makeWidget(spec, iconSize, _, lang, hooks) {
     case 'script': return makeScript(spec, iconSize, _);
     case 'news': return makeNews(spec, iconSize, _, lang, hooks);
     case 'photos': return makePhotos(spec, iconSize, _);
+    default: return makePlaceholder(_);
+    }
+}
+
+// Rich widgets for the app-grid (menu) favorites section.
+function makeWidgetGrid(spec, iconSize, _, lang, hooks) {
+    switch (spec && spec.type) {
+    case 'weather': return makeWeatherGrid(spec, _, hooks);
+    case 'clock': return makeClockGrid(spec, _);
+    case 'news': return makeNewsGrid(spec, _, hooks);
+    case 'mpris': return makeMprisGrid(spec, _);
+    case 'photos': return makePhotos(spec, iconSize, _, true);
+    case 'system': return makeSystem(spec, iconSize, _);
+    case 'script': return makeScript(spec, iconSize, _);
     default: return makePlaceholder(_);
     }
 }
@@ -424,16 +441,17 @@ function parseIso(s) {
     return GLib.DateTime.new_local(y, mo, da, h, mi || 0, 0);
 }
 
-// Rich weather popup (current + hourly + 5-day) shown next to the widget.
-function openForecast(sourceActor, lat, lon, name, _, hooks, spec) {
+// Builds the rich weather view (current + hourly + 5-day) as a reusable actor.
+// Returns {container, update(lat, lon)}; `update` fetches open-meteo and fills
+// it in. Used both by the popup (openForecast) and by the grid weather widget.
+function forecastView(name, _, hooks, spec, width) {
     const now = GLib.DateTime.new_now_local();
-    const panelW = Math.max(sourceActor && sourceActor.width ? sourceActor.width : 0, 270);
     const rawCache = hooks && spec && spec.id ? hooks.getCache(spec.id) : null;
     const cache = rawCache && typeof rawCache === 'object' ? rawCache : {};
     const fc = cache.fc || null;   // last shown forecast (from memory)
 
     const container = new St.BoxLayout({style_class: 'dock-forecast', vertical: true});
-    container.set_width(panelW);
+    container.set_width(width);
 
     // ---- Current conditions header ----
     const head = new St.BoxLayout({style_class: 'dock-fc-head', vertical: true});
@@ -512,83 +530,147 @@ function openForecast(sourceActor, lat, lon, name, _, hooks, spec) {
     }
     container.add_child(daysBox);
 
-    showPopup(container, sourceActor);
+    const update = (lat, lon) => {
+        if (lat == null || lon == null) {
+            if (!fc)
+                bigTemp.text = _('sin datos');
+            return;
+        }
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+            '&current=temperature_2m,weather_code,wind_speed_10m,surface_pressure,relative_humidity_2m' +
+            '&hourly=temperature_2m,weather_code' +
+            '&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=5&timezone=auto';
+        const session = new Soup.Session();
+        container._fcSession = session;
+        let msg;
+        try {
+            msg = Soup.Message.new('GET', url);
+        } catch (_e) {
+            return;
+        }
+        session.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null, (s, res) => {
+            try {
+                const bytes = session.send_and_read_finish(res);
+                const data = JSON.parse(new TextDecoder().decode(bytes.get_data()));
+                const cur = data.current;
+                const fcNew = {cur: {}, hours: [], days: []};
+                fcNew.cur.temp = `${Math.round(cur.temperature_2m)}°`;
+                fcNew.cur.icon = wmoIcon(cur.weather_code);
+                fcNew.cur.cond = wmoText(cur.weather_code, _);
+                fcNew.cur.wind = `${Math.round(cur.wind_speed_10m)} km/h`;
+                fcNew.cur.press = `${Math.round(cur.surface_pressure)} hPa`;
+                fcNew.cur.hum = `${Math.round(cur.relative_humidity_2m)} %`;
+                bigTemp.text = fcNew.cur.temp;
+                condIcon.icon_name = fcNew.cur.icon;
+                condLabel.text = fcNew.cur.cond;
+                windL.text = fcNew.cur.wind;
+                pressL.text = fcNew.cur.press;
+                humL.text = fcNew.cur.hum;
 
-    if (lat == null || lon == null) {
-        if (!fc)
-            bigTemp.text = _('sin datos');
-        return; // no coords: keep whatever is cached
-    }
+                const h = data.hourly;
+                const nowKey = now.format('%Y-%m-%dT%H:00');
+                let idx = h.time.indexOf(nowKey);
+                if (idx < 0)
+                    idx = h.time.findIndex(t => t >= nowKey);
+                if (idx < 0)
+                    idx = 0;
+                for (let k = 0; k < hourRefs.length; k++) {
+                    const j = idx + offsets[k];
+                    if (j < h.time.length) {
+                        const ic = wmoIcon(h.weather_code[j]);
+                        const tp = `${Math.round(h.temperature_2m[j])}°`;
+                        hourRefs[k].hi.icon_name = ic;
+                        hourRefs[k].hp.text = tp;
+                        fcNew.hours[k] = {icon: ic, temp: tp};
+                    }
+                }
 
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-        '&current=temperature_2m,weather_code,wind_speed_10m,surface_pressure,relative_humidity_2m' +
-        '&hourly=temperature_2m,weather_code' +
-        '&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=5&timezone=auto';
+                const d = data.daily;
+                for (let i = 0; i < dayRefs.length && i < d.time.length; i++) {
+                    const ic = wmoIcon(d.weather_code[i]);
+                    const mx = `${Math.round(d.temperature_2m_max[i])}°`;
+                    const mn = `${Math.round(d.temperature_2m_min[i])}°`;
+                    dayRefs[i].di.icon_name = ic;
+                    dayRefs[i].dmax.text = mx;
+                    dayRefs[i].dmin.text = mn;
+                    fcNew.days[i] = {icon: ic, max: mx, min: mn};
+                }
+
+                if (hooks && spec && spec.id)
+                    hooks.setCache(spec.id, {fc: fcNew});
+            } catch (_e) {
+                // Keep whatever is shown (cached); don't clear on error.
+            }
+        });
+    };
+
+    container.connect('destroy', () => {
+        try { if (container._fcSession) container._fcSession.abort(); } catch (_e) { /* ok */ }
+    });
+
+    return {container, update, bigTemp};
+}
+
+// Rich weather popup (current + hourly + 5-day) shown next to the widget.
+function openForecast(sourceActor, lat, lon, name, _, hooks, spec) {
+    const panelW = Math.max(sourceActor && sourceActor.width ? sourceActor.width : 0, 270);
+    const v = forecastView(name, _, hooks, spec, panelW);
+    showPopup(v.container, sourceActor);
+    v.update(lat, lon);
+}
+
+// Resolves a location to {lat, lon, title} via wttr.in (same source the compact
+// weather widget uses), caching the result for the forecast.
+function resolveWeatherCoords(spec, hooks, cb) {
+    const loc = (spec.location || '').trim();
+    const base = loc ? `https://wttr.in/${encodeURIComponent(loc)}` : 'https://wttr.in/';
     const session = new Soup.Session();
     let msg;
     try {
-        msg = Soup.Message.new('GET', url);
+        msg = Soup.Message.new('GET', `${base}?format=j1`);
     } catch (_e) {
-        return; // keep cached
+        cb(null);
+        return;
     }
     session.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null, (s, res) => {
         try {
             const bytes = session.send_and_read_finish(res);
             const data = JSON.parse(new TextDecoder().decode(bytes.get_data()));
-            const cur = data.current;
-            const fcNew = {cur: {}, hours: [], days: []};
-            fcNew.cur.temp = `${Math.round(cur.temperature_2m)}°`;
-            fcNew.cur.icon = wmoIcon(cur.weather_code);
-            fcNew.cur.cond = wmoText(cur.weather_code, _);
-            fcNew.cur.wind = `${Math.round(cur.wind_speed_10m)} km/h`;
-            fcNew.cur.press = `${Math.round(cur.surface_pressure)} hPa`;
-            fcNew.cur.hum = `${Math.round(cur.relative_humidity_2m)} %`;
-            bigTemp.text = fcNew.cur.temp;
-            condIcon.icon_name = fcNew.cur.icon;
-            condLabel.text = fcNew.cur.cond;
-            windL.text = fcNew.cur.wind;
-            pressL.text = fcNew.cur.press;
-            humL.text = fcNew.cur.hum;
-
-            const h = data.hourly;
-            const nowKey = now.format('%Y-%m-%dT%H:00');
-            let idx = h.time.indexOf(nowKey);
-            if (idx < 0)
-                idx = h.time.findIndex(t => t >= nowKey);
-            if (idx < 0)
-                idx = 0;
-            for (let k = 0; k < hourRefs.length; k++) {
-                const j = idx + offsets[k];
-                if (j < h.time.length) {
-                    const ic = wmoIcon(h.weather_code[j]);
-                    const tp = `${Math.round(h.temperature_2m[j])}°`;
-                    hourRefs[k].hi.icon_name = ic;
-                    hourRefs[k].hp.text = tp;
-                    fcNew.hours[k] = {icon: ic, temp: tp};
-                }
-            }
-
-            const d = data.daily;
-            for (let i = 0; i < dayRefs.length && i < d.time.length; i++) {
-                const ic = wmoIcon(d.weather_code[i]);
-                const mx = `${Math.round(d.temperature_2m_max[i])}°`;
-                const mn = `${Math.round(d.temperature_2m_min[i])}°`;
-                dayRefs[i].di.icon_name = ic;
-                dayRefs[i].dmax.text = mx;
-                dayRefs[i].dmin.text = mn;
-                fcNew.days[i] = {icon: ic, max: mx, min: mn};
-            }
-
-            if (hooks && spec && spec.id)
-                hooks.setCache(spec.id, {fc: fcNew});
+            const na = data.nearest_area && data.nearest_area[0];
+            if (!na) { cb(null); return; }
+            const lat = na.latitude, lon = na.longitude;
+            const title = loc ? loc.split(',')[0].trim() : na.areaName[0].value;
+            if (hooks && spec.id)
+                hooks.setCache(spec.id, {lat, lon, title});
+            cb({lat, lon, title});
         } catch (_e) {
-            // Keep whatever is shown (cached); don't clear on error.
+            cb(null);
         }
     });
 }
 
-// Own month calendar popup (double-click on the clock widget).
-function openCalendar(sourceActor) {
+// Grid weather widget: the 5-day forecast card embedded in the app grid.
+function makeWeatherGrid(spec, _, hooks) {
+    const rawCache = hooks && spec.id ? hooks.getCache(spec.id) : null;
+    const cache = rawCache && typeof rawCache === 'object' ? rawCache : {};
+    const loc = (spec.location || '').trim();
+    const name = loc ? loc.split(',')[0].trim() : (cache.title || _('Clima'));
+    const v = forecastView(name, _, hooks, spec, 300);
+    if (cache.lat != null && cache.lon != null) {
+        v.update(cache.lat, cache.lon);
+    } else {
+        resolveWeatherCoords(spec, hooks, (c) => {
+            if (c && v.container.get_stage())
+                v.update(c.lat, c.lon);
+        });
+    }
+    return {actor: v.container, destroy() { /* session aborts on actor destroy */ }};
+}
+
+// Builds the month calendar (with GNOME Online Accounts events) as a reusable
+// actor. It cleans up its event source on 'destroy'. Used by the popup
+// (openCalendar) and embedded in the grid clock widget.
+function buildCalendar() {
     const now = GLib.DateTime.new_now_local();
     let viewY = now.get_year();
     let viewM = now.get_month();
@@ -765,7 +847,38 @@ function openCalendar(sourceActor) {
     });
 
     render();
-    showPopup(container, sourceActor);
+    return container;
+}
+
+// Month calendar popup (click on the clock widget in the dock).
+function openCalendar(sourceActor) {
+    showPopup(buildCalendar(), sourceActor);
+}
+
+// Grid clock widget: big ticking time + date, with the month calendar below.
+function makeClockGrid(spec, _) {
+    const container = new St.BoxLayout({style_class: 'dock-clock-grid', vertical: true});
+    const timeL = new St.Label({style_class: 'dock-clock-grid-time', x_align: CENTER});
+    const dateL = new St.Label({style_class: 'dock-clock-grid-date', x_align: CENTER});
+    container.add_child(timeL);
+    container.add_child(dateL);
+
+    const fmt24 = spec.format24 !== false;
+    const tick = () => {
+        const now = GLib.DateTime.new_now_local();
+        timeL.text = now.format(fmt24 ? '%H:%M:%S' : '%I:%M:%S %p');
+        dateL.text = now.format('%A, %d %B %Y');
+        return GLib.SOURCE_CONTINUE;
+    };
+    tick();
+    const timer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1, tick);
+
+    container.add_child(buildCalendar());   // month view (self-cleans on destroy)
+
+    return {
+        actor: container,
+        destroy() { if (timer) GLib.source_remove(timer); },
+    };
 }
 
 function makeWeather(spec, iconSize, _, lang, hooks) {
@@ -1116,7 +1229,7 @@ function decodeEntities(s) {
         .replace(/&amp;/g, '&');            // must be last
 }
 
-// Extracts up to `max` {title, link} items from an RSS feed.
+// Extracts up to `max` {title, link, source, date} items from an RSS feed.
 function parseRssItems(xml, max) {
     const items = [];
     const re = /<item\b[^>]*>([\s\S]*?)<\/item>/g;
@@ -1125,12 +1238,35 @@ function parseRssItems(xml, max) {
         const block = m[1];
         const tm = block.match(/<title>([\s\S]*?)<\/title>/);
         const lm = block.match(/<link>([\s\S]*?)<\/link>/);
-        const title = decodeEntities(tm ? tm[1] : '').trim();
+        const sm = block.match(/<source[^>]*>([\s\S]*?)<\/source>/);
+        const pm = block.match(/<pubDate>([\s\S]*?)<\/pubDate>/);
+        let title = decodeEntities(tm ? tm[1] : '').trim();
         const link = decodeEntities(lm ? lm[1] : '').trim();
+        const source = decodeEntities(sm ? sm[1] : '').trim();
+        const date = pm ? pm[1].trim() : '';
+        // Google News titles are "Headline - Source"; drop the trailing source.
+        if (source && title.endsWith(` - ${source}`))
+            title = title.slice(0, -(source.length + 3)).trim();
         if (title)
-            items.push({title, link});
+            items.push({title, link, source, date});
     }
     return items;
+}
+
+// Short relative age ("3 h", "2 d") from an RSS pubDate string.
+function relativeAge(dateStr, _) {
+    if (!dateStr)
+        return '';
+    const t = Date.parse(dateStr);
+    if (isNaN(t))
+        return '';
+    const mins = Math.max(0, Math.floor((Date.now() - t) / 60000));
+    if (mins < 60)
+        return `${mins} min`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24)
+        return `${hrs} h`;
+    return `${Math.floor(hrs / 24)} d`;
 }
 
 function makeNews(spec, iconSize, _, lang, hooks) {
@@ -1319,15 +1455,15 @@ function photoName(p) {
     return dot > 0 ? b.slice(0, dot) : b;
 }
 
-function makePhotos(spec, iconSize, _) {
+function makePhotos(spec, iconSize, _, big) {
     const box = new St.BoxLayout({
-        style_class: 'dock-widget dock-widget-photos',
+        style_class: 'dock-widget dock-widget-photos' + (big ? ' dock-widget-photos-big' : ''),
         reactive: true,
         vertical: true,
         y_align: CENTER,
     });
-    const ph = Math.max(40, Math.round(iconSize * 0.9));
-    const pw = Math.round(ph * 1.35);
+    const ph = big ? 200 : Math.max(40, Math.round(iconSize * 0.9));
+    const pw = big ? 270 : Math.round(ph * 1.35);
     const photo = new St.Widget({style_class: 'dock-photo-img'});
     photo.set_size(pw, ph);
     box.add_child(photo);
@@ -1434,4 +1570,257 @@ function openPhotos(sourceActor, images, startIdx, _) {
     render();
 
     return showPopup(container, sourceActor);
+}
+
+// ---------------------------------------------------------- Grid: news feed
+// A card feed (image-2 style, text cards) for the menu grid. Google News RSS
+// does not carry per-article images, so cards show source + age + headline.
+function makeNewsGrid(spec, _, hooks) {
+    const code = (spec.country || 'CL').toUpperCase();
+    const c = NEWS_COUNTRIES[code] || NEWS_COUNTRIES.CL;
+    const url = `https://news.google.com/rss?hl=${c.hl}&gl=${c.gl}&ceid=${c.gl}:${c.lang}`;
+
+    const container = new St.BoxLayout({style_class: 'dock-newsfeed', vertical: true});
+    container.set_width(440);
+    container.add_child(new St.Label({
+        style_class: 'dock-newsfeed-title',
+        text: `${_('Noticias')} · ${c.name}`,
+    }));
+    const scroll = new St.ScrollView({style_class: 'dock-newsfeed-scroll', y_expand: true});
+    scroll.set_policy(St.PolicyType.NEVER, St.PolicyType.AUTOMATIC);
+    const list = new St.BoxLayout({style_class: 'dock-newsfeed-list', vertical: true});
+    scroll.set_child(list);
+    container.add_child(scroll);
+
+    const rawCache = hooks && spec.id ? hooks.getCache(spec.id) : null;
+    const cache = rawCache && typeof rawCache === 'object' ? rawCache : {};
+    let items = (cache.country === code && Array.isArray(cache.items)) ? cache.items : [];
+
+    const render = () => {
+        list.destroy_all_children();
+        if (!items.length) {
+            list.add_child(new St.Label({style_class: 'dock-newsfeed-empty', text: _('Cargando…')}));
+            return;
+        }
+        for (const it of items.slice(0, 20)) {
+            const cardBtn = new St.Button({style_class: 'dock-newsfeed-card', x_expand: true});
+            const vb = new St.BoxLayout({vertical: true, x_expand: true});
+            const meta = new St.BoxLayout({style_class: 'dock-newsfeed-meta'});
+            meta.add_child(new St.Label({
+                style_class: 'dock-newsfeed-source', text: it.source || _('Noticias'),
+            }));
+            const age = relativeAge(it.date, _);
+            if (age)
+                meta.add_child(new St.Label({style_class: 'dock-newsfeed-age', text: `  ·  ${age}`}));
+            vb.add_child(meta);
+            const h = new St.Label({style_class: 'dock-newsfeed-headline', text: it.title});
+            h.clutter_text.set_line_wrap(true);
+            vb.add_child(h);
+            cardBtn.set_child(vb);
+            cardBtn.connect('clicked', () => {
+                if (it.link) {
+                    try { Gio.AppInfo.launch_default_for_uri(it.link, null); } catch (_e) { /* ok */ }
+                }
+            });
+            list.add_child(cardBtn);
+        }
+    };
+    render();
+
+    const session = new Soup.Session();
+    let timer = 0;
+    const fetch = () => {
+        let msg;
+        try { msg = Soup.Message.new('GET', url); } catch (_e) { return; }
+        try { msg.request_headers.append('User-Agent', 'Mozilla/5.0'); } catch (_e) { /* ok */ }
+        session.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null, (s, res) => {
+            try {
+                const bytes = session.send_and_read_finish(res);
+                const xml = new TextDecoder().decode(bytes.get_data());
+                const parsed = parseRssItems(xml, 25);
+                if (parsed.length) {
+                    items = parsed;
+                    render();
+                    if (hooks && spec.id)
+                        hooks.setCache(spec.id, {items, country: code});
+                }
+            } catch (_e) { /* keep last */ }
+        });
+    };
+    fetch();
+    timer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 900, () => { fetch(); return GLib.SOURCE_CONTINUE; });
+
+    return {
+        actor: container,
+        destroy() {
+            if (timer) { GLib.source_remove(timer); timer = 0; }
+            try { session.abort(); } catch (_e) { /* ok */ }
+        },
+    };
+}
+
+// -------------------------------------------------------- Grid: music player
+// A large now-playing card (image-1 style) with art, title/artist, a progress
+// bar and prev/play-pause/next, driven over MPRIS.
+function fmtClock(us) {
+    if (!us || us < 0) return '0:00';
+    const s = Math.floor(us / 1e6);
+    const m = Math.floor(s / 60);
+    const ss = s % 60;
+    return `${m}:${ss < 10 ? '0' + ss : ss}`;
+}
+
+function makeMprisGrid(spec, _) {
+    const bus = Gio.DBus.session;
+    const container = new St.BoxLayout({style_class: 'dock-mpris-grid', vertical: true});
+    container.set_width(300);
+
+    const art = new St.Icon({
+        style_class: 'dock-mpris-grid-art',
+        icon_name: 'audio-x-generic-symbolic',
+        icon_size: 128,
+    });
+    container.add_child(new St.Bin({x_align: CENTER, child: art}));
+
+    const title = new St.Label({style_class: 'dock-mpris-grid-title', x_align: CENTER});
+    title.clutter_text.set_ellipsize(3);
+    const artist = new St.Label({style_class: 'dock-mpris-grid-artist', x_align: CENTER});
+    artist.clutter_text.set_ellipsize(3);
+    container.add_child(title);
+    container.add_child(artist);
+
+    const track = new St.BoxLayout({style_class: 'dock-mpris-grid-track'});
+    const TRACK_W = 260;
+    track.set_width(TRACK_W);
+    const fill = new St.Widget({style_class: 'dock-mpris-grid-fill'});
+    fill.set_width(0);
+    track.add_child(fill);
+    container.add_child(new St.Bin({x_align: CENTER, child: track}));
+
+    const times = new St.BoxLayout({style_class: 'dock-mpris-grid-times'});
+    const elapsed = new St.Label({style_class: 'dock-mpris-grid-time', text: '0:00', x_expand: true, x_align: Clutter.ActorAlign.START});
+    const total = new St.Label({style_class: 'dock-mpris-grid-time', text: '0:00', x_align: Clutter.ActorAlign.END});
+    times.add_child(elapsed);
+    times.add_child(total);
+    container.add_child(times);
+
+    const controls = new St.BoxLayout({style_class: 'dock-mpris-grid-ctl', x_align: CENTER});
+    const mkBtn = (iconName) => new St.Button({
+        style_class: 'dock-mpris-grid-btn',
+        child: new St.Icon({icon_name: iconName, icon_size: 22}),
+    });
+    const prevB = mkBtn('media-skip-backward-symbolic');
+    const ppB = mkBtn('media-playback-start-symbolic');
+    const nextB = mkBtn('media-skip-forward-symbolic');
+    controls.add_child(prevB);
+    controls.add_child(ppB);
+    controls.add_child(nextB);
+    container.add_child(controls);
+
+    let curProxy = null;
+    let curName = null;
+    const mkProxy = (n) => Gio.DBusProxy.new_sync(
+        bus, Gio.DBusProxyFlags.NONE, null, n, MPRIS_PATH, MPRIS_IFACE, null);
+    const listPlayers = () => {
+        try {
+            const reply = bus.call_sync('org.freedesktop.DBus', '/org/freedesktop/DBus',
+                'org.freedesktop.DBus', 'ListNames', null, null,
+                Gio.DBusCallFlags.NONE, -1, null);
+            return reply.deep_unpack()[0].filter(n => n.startsWith('org.mpris.MediaPlayer2.'));
+        } catch (_e) { return []; }
+    };
+    const pick = () => {
+        let fallback = null;
+        for (const n of listPlayers()) {
+            try {
+                const p = mkProxy(n);
+                const st = p.get_cached_property('PlaybackStatus');
+                if (st && st.unpack() === 'Playing')
+                    return {name: n, proxy: p};
+                if (!fallback)
+                    fallback = {name: n, proxy: p};
+            } catch (_e) { /* skip */ }
+        }
+        return fallback;
+    };
+    const callPlayer = (method) => {
+        if (curProxy) {
+            try { curProxy.call(method, null, Gio.DBusCallFlags.NONE, -1, null, null); } catch (_e) { /* ok */ }
+        }
+    };
+    prevB.connect('clicked', () => callPlayer('Previous'));
+    nextB.connect('clicked', () => callPlayer('Next'));
+    ppB.connect('clicked', () => callPlayer('PlayPause'));
+
+    const getPosition = () => {
+        if (!curProxy || !curName) return -1;
+        try {
+            const r = curProxy.g_connection.call_sync(
+                curName, MPRIS_PATH, 'org.freedesktop.DBus.Properties', 'Get',
+                new GLib.Variant('(ss)', [MPRIS_IFACE, 'Position']),
+                new GLib.VariantType('(v)'), Gio.DBusCallFlags.NONE, 300, null);
+            return r.deep_unpack()[0].deep_unpack();
+        } catch (_e) { return -1; }
+    };
+
+    const refresh = () => {
+        const sel = pick();
+        curProxy = sel ? sel.proxy : null;
+        curName = sel ? sel.name : null;
+        if (!curProxy) {
+            title.text = _('Nada reproduciéndose');
+            artist.text = '';
+            art.gicon = null;
+            art.icon_name = 'audio-x-generic-symbolic';
+            ppB.child.icon_name = 'media-playback-start-symbolic';
+            fill.set_width(0);
+            elapsed.text = '0:00';
+            total.text = '0:00';
+            return GLib.SOURCE_CONTINUE;
+        }
+        let t = '', a = '', url = '', len = 0;
+        const md = curProxy.get_cached_property('Metadata');
+        if (md) {
+            const m = md.deep_unpack();
+            if (m['xesam:title']) t = m['xesam:title'].deep_unpack();
+            if (m['xesam:artist']) {
+                const arr = m['xesam:artist'].deep_unpack();
+                a = Array.isArray(arr) ? arr.join(', ') : String(arr);
+            }
+            if (m['mpris:artUrl']) url = m['mpris:artUrl'].deep_unpack();
+            if (m['mpris:length']) { try { len = Number(m['mpris:length'].deep_unpack()); } catch (_e) { len = 0; } }
+        }
+        title.text = t || _('Nada reproduciéndose');
+        artist.text = a;
+        if (url && url.startsWith('file://')) {
+            try { art.gicon = new Gio.FileIcon({file: Gio.File.new_for_uri(url)}); }
+            catch (_e) { art.gicon = null; art.icon_name = 'audio-x-generic-symbolic'; }
+        } else {
+            art.gicon = null;
+            art.icon_name = 'audio-x-generic-symbolic';
+        }
+        const st = curProxy.get_cached_property('PlaybackStatus');
+        const playing = st && st.unpack() === 'Playing';
+        ppB.child.icon_name = playing ? 'media-playback-pause-symbolic' : 'media-playback-start-symbolic';
+
+        if (len > 0) {
+            const pos = getPosition();
+            const frac = pos >= 0 ? Math.max(0, Math.min(1, pos / len)) : 0;
+            fill.set_width(Math.round(TRACK_W * frac));
+            elapsed.text = fmtClock(pos);
+            total.text = fmtClock(len);
+        } else {
+            fill.set_width(0);
+            elapsed.text = '0:00';
+            total.text = '0:00';
+        }
+        return GLib.SOURCE_CONTINUE;
+    };
+    refresh();
+    const timer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1, refresh);
+
+    return {
+        actor: container,
+        destroy() { if (timer) GLib.source_remove(timer); },
+    };
 }

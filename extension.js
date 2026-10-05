@@ -39,6 +39,17 @@ function safeParseStacks(str) {
 // Widgets share the same JSON-array shape as stacks.
 const safeParseWidgets = safeParseStacks;
 
+// Where a widget is shown. Music (mpris), news and photos are grid-only; the
+// rest (weather, system, clock) default to the dock and can opt into the grid
+// via spec.place = 'grid'.
+function widgetPlace(w) {
+    if (!w)
+        return 'dock';
+    if (w.type === 'mpris' || w.type === 'news' || w.type === 'photos')
+        return 'grid';
+    return w.place === 'grid' ? 'grid' : 'dock';
+}
+
 function iconForGicon(gicon, size) {
     return new St.Icon({gicon, icon_size: size});
 }
@@ -1448,44 +1459,53 @@ export default class DockStacksExtension extends Extension {
         };
     }
 
-    // Renders the configured dock widgets at the END of the app grid, shown only
-    // in the "Favoritos" category. These are LIVE widget instances (same as in
-    // the dock), created on open and torn down by _destroyGridWidgets() so their
-    // timers/D-Bus don't leak when the grid repopulates or closes.
+    // Renders the GRID-placed widgets at the END of the app grid, shown only in
+    // the "Favoritos" category, each in its rich format (weather = 5-day,
+    // clock = month + time, news = feed, music = full player, photos = big
+    // Polaroid). LIVE instances created on open and torn down by
+    // _destroyGridWidgets() so their timers/D-Bus don't leak.
     _appendGridWidgets(box) {
-        const widgets = safeParseWidgets(this._settings.get_string('widgets'));
+        const widgets = safeParseWidgets(this._settings.get_string('widgets'))
+            .filter(w => widgetPlace(w) === 'grid');
         if (!widgets.length)
             return;
         const iconSize = this._settings.get_int('icon-size');
         const gridW = this._appGridGridWidth || 600;
-        const SLOT = 200;                                   // approx. slot per widget
-        const perRow = Math.max(1, Math.floor(gridW / SLOT));
 
         box.add_child(new St.Label({
             style_class: 'dock-appgrid-widgets-title',
             text: _('Widgets'),
         }));
 
+        // Rich cards are wide; wrap them into rows by their estimated width.
+        const estWidth = (type) => ({
+            weather: 320, clock: 320, news: 460, mpris: 320, photos: 290,
+        }[type] || 240);
+
         let row = null;
-        widgets.forEach((wspec, i) => {
-            if (i % perRow === 0) {
+        let rowW = 0;
+        for (const wspec of widgets) {
+            const ww = estWidth(wspec.type) + 16;
+            if (!row || rowW + ww > gridW) {
                 row = new St.BoxLayout({style_class: 'dock-appgrid-widgets-row'});
                 box.add_child(row);
+                rowW = 0;
             }
             let inst;
             try {
                 inst = makeWidget(wspec, iconSize, _, resolveLanguage(this._settings),
-                    this._widgetHooks());
+                    this._widgetHooks(), 'grid');
             } catch (e) {
                 logError(e, 'Dock Stack: widget en la rejilla');
-                return;
+                continue;
             }
             this._gridWidgetInstances.push(inst);
             row.add_child(new St.Bin({
                 style_class: 'dock-appgrid-widget-slot',
                 child: inst.actor,
             }));
-        });
+            rowW += ww;
+        }
     }
 
     // Stops timers/D-Bus of the grid's widget instances (actors are destroyed
@@ -2219,7 +2239,10 @@ export default class DockStacksExtension extends Extension {
         const stacks = safeParseStacks(this._settings.get_string('stacks'));
         const stackById = new Map(stacks.map(s => [s.id, s]));
 
-        const widgets = safeParseWidgets(this._settings.get_string('widgets'));
+        // Only DOCK-placed widgets become pinned dock items; grid-placed widgets
+        // (and the grid-only types) are shown in the menu grid instead.
+        const widgets = safeParseWidgets(this._settings.get_string('widgets'))
+            .filter(w => widgetPlace(w) === 'dock');
         const widgetById = new Map(widgets.map(w => [w.id, w]));
 
         let saved = [];

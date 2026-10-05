@@ -778,7 +778,151 @@
 }
 
 .dock-appgrid-widget-slot {
-    padding: 2px;
+    background-color: rgba(20, 20, 24, 0.85);
+    border-radius: 14px;
+    padding: 8px;
+    margin: 4px;
+}
+
+/* ---- Grid clock: big time + date above the month calendar ---- */
+.dock-clock-grid {
+    spacing: 2px;
+}
+
+.dock-clock-grid-time {
+    color: #ffffff;
+    font-size: 26pt;
+    font-weight: 300;
+    padding-top: 2px;
+}
+
+.dock-clock-grid-date {
+    color: #d6d6d6;
+    font-size: 10.5pt;
+    padding-bottom: 6px;
+}
+
+/* ---- Grid news feed (card list) ---- */
+.dock-newsfeed {
+    spacing: 8px;
+}
+
+.dock-newsfeed-title {
+    color: #ffffff;
+    font-weight: bold;
+    font-size: 12pt;
+}
+
+.dock-newsfeed-scroll {
+    max-height: 440px;
+}
+
+.dock-newsfeed-list {
+    spacing: 8px;
+}
+
+.dock-newsfeed-card {
+    background-color: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    padding: 10px 12px;
+}
+
+.dock-newsfeed-card:hover {
+    background-color: rgba(255, 255, 255, 0.12);
+}
+
+.dock-newsfeed-meta {
+    spacing: 0;
+}
+
+.dock-newsfeed-source {
+    color: #7fb0ff;
+    font-size: 8.5pt;
+    font-weight: bold;
+}
+
+.dock-newsfeed-age {
+    color: #9a9a9a;
+    font-size: 8.5pt;
+}
+
+.dock-newsfeed-headline {
+    color: #f0f0f0;
+    font-size: 10.5pt;
+    padding-top: 3px;
+}
+
+.dock-newsfeed-empty {
+    color: #a0a0a0;
+    font-size: 10pt;
+    padding: 8px 2px;
+}
+
+/* ---- Grid music player (now playing) ---- */
+.dock-mpris-grid {
+    spacing: 6px;
+    padding: 6px 4px;
+}
+
+.dock-mpris-grid-art {
+    border-radius: 12px;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.dock-mpris-grid-title {
+    color: #ffffff;
+    font-size: 13pt;
+    font-weight: bold;
+    padding-top: 4px;
+}
+
+.dock-mpris-grid-artist {
+    color: #cfcfcf;
+    font-size: 10pt;
+}
+
+.dock-mpris-grid-track {
+    background-color: rgba(255, 255, 255, 0.20);
+    border-radius: 3px;
+    height: 6px;
+    margin: 6px 0;
+}
+
+.dock-mpris-grid-fill {
+    background-color: #ffffff;
+    border-radius: 3px;
+    height: 6px;
+}
+
+.dock-mpris-grid-times {
+    spacing: 6px;
+}
+
+.dock-mpris-grid-time {
+    color: #c0c0c0;
+    font-size: 8.5pt;
+}
+
+.dock-mpris-grid-ctl {
+    spacing: 18px;
+    padding-top: 6px;
+}
+
+.dock-mpris-grid-btn {
+    color: #ffffff;
+    padding: 8px;
+    border-radius: 20px;
+}
+
+.dock-mpris-grid-btn:hover {
+    background-color: rgba(255, 255, 255, 0.14);
+}
+
+/* ---- Bigger Polaroid caption in the grid ---- */
+.dock-widget-photos-big .dock-photo-cap {
+    font-size: 10pt;
+    padding-top: 2px;
 }
 
 /* --------------------------------------------------------------------------
