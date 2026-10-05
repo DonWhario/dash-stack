@@ -1688,22 +1688,32 @@ function makeSquareThumb(srcPath, size) {
 function applyThumb(iconActor, path) {
     try {
         iconActor.gicon = new Gio.FileIcon({file: Gio.File.new_for_path(path)});
+        iconActor.visible = true;
     } catch (_e) { /* actor gone */ }
 }
 
-// Downloads `url` once, crops it to a square `size`px and shows it on `icon`.
-function loadNewsImage(session, url, icon, size) {
-    const base = newsImageBase(url);
-    const sq = `${base}.sq${size}.png`;
-    if (GLib.file_test(sq, GLib.FileTest.EXISTS)) { applyThumb(icon, sq); return; }
-    const orig = existingNewsImage(base);
-    if (orig) {
-        const t = makeSquareThumb(orig, size);
-        if (t) applyThumb(icon, t);
-        return;
+// Extracts an image URL from an article's HTML (og:image / twitter:image).
+function extractOgImage(html) {
+    if (!html)
+        return '';
+    const pats = [
+        /<meta[^>]+property=["']og:image(?::url)?["'][^>]+content=["']([^"']+)["']/i,
+        /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image(?::url)?["']/i,
+        /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i,
+        /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image["']/i,
+    ];
+    for (const re of pats) {
+        const m = re.exec(html);
+        if (m && m[1])
+            return m[1].replace(/&amp;/g, '&');
     }
+    return '';
+}
+
+// Downloads an image URL, saves + crops it to a square, and shows it on `icon`.
+function downloadAndCrop(session, imgUrl, base, size, icon) {
     let msg;
-    try { msg = Soup.Message.new('GET', url); } catch (_e) { return; }
+    try { msg = Soup.Message.new('GET', imgUrl); } catch (_e) { return; }
     try { msg.request_headers.append('User-Agent', 'Mozilla/5.0'); } catch (_e) { /* ok */ }
     session.send_and_read_async(msg, GLib.PRIORITY_LOW, null, (s, res) => {
         try {
@@ -1717,6 +1727,40 @@ function loadNewsImage(session, url, icon, size) {
                 if (t) applyThumb(icon, t);
             }
         } catch (_e) { /* ignore image errors */ }
+    });
+}
+
+// Shows a thumbnail for an article: prefers the feed's direct image; if none,
+// fetches the article page and extracts its og:image. Keyed/cached by the
+// article URL, so re-opens reuse the cropped thumbnail.
+function loadNewsThumb(session, articleUrl, directImg, icon, size) {
+    const base = newsImageBase(articleUrl || directImg || '');
+    const sq = `${base}.sq${size}.png`;
+    if (GLib.file_test(sq, GLib.FileTest.EXISTS)) { applyThumb(icon, sq); return; }
+    const orig = existingNewsImage(base);
+    if (orig) {
+        const t = makeSquareThumb(orig, size);
+        if (t) applyThumb(icon, t);
+        return;
+    }
+    if (directImg) {
+        downloadAndCrop(session, directImg, base, size, icon);
+        return;
+    }
+    if (!articleUrl)
+        return;
+    // No direct image: fetch the article and read its og:image.
+    let msg;
+    try { msg = Soup.Message.new('GET', articleUrl); } catch (_e) { return; }
+    try { msg.request_headers.append('User-Agent', 'Mozilla/5.0'); } catch (_e) { /* ok */ }
+    session.send_and_read_async(msg, GLib.PRIORITY_LOW, null, (s, res) => {
+        try {
+            const bytes = session.send_and_read_finish(res);
+            const html = new TextDecoder().decode(bytes.get_data());
+            const og = extractOgImage(html);
+            if (og)
+                downloadAndCrop(session, og, base, size, icon);
+        } catch (_e) { /* ignore */ }
     });
 }
 
@@ -1771,17 +1815,17 @@ function makeNewsGrid(spec, _, hooks) {
                 style_class: 'dock-newsfeed-row',
                 x_expand: true, x_align: Clutter.ActorAlign.FILL,
             });
-            if (it.img) {
-                // Thumbnail painted the proven way (St.Icon + Gio.FileIcon),
-                // pre-cropped to a square so it fills the icon with no gaps.
-                const thumb = new St.Icon({
-                    style_class: 'dock-newsfeed-thumb',
-                    icon_size: 84,
-                    y_align: Clutter.ActorAlign.START,
-                });
-                row.add_child(thumb);
-                loadNewsImage(imgSession, it.img, thumb, 168);
-            }
+            // Thumbnail painted the proven way (St.Icon + Gio.FileIcon),
+            // pre-cropped to a square. Hidden until an image actually loads, so
+            // articles without any image just show text (no empty square).
+            const thumb = new St.Icon({
+                style_class: 'dock-newsfeed-thumb',
+                icon_size: 84,
+                y_align: Clutter.ActorAlign.START,
+            });
+            thumb.visible = false;
+            row.add_child(thumb);
+            loadNewsThumb(imgSession, it.link, it.img, thumb, 168);
             const vb = new St.BoxLayout({
                 vertical: true, x_expand: true, x_align: Clutter.ActorAlign.FILL,
             });
