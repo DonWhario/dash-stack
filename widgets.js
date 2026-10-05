@@ -1736,11 +1736,21 @@ function makeNewsGrid(spec, _, hooks) {
             return;
         }
         for (const it of items.slice(0, 20)) {
-            const cardBtn = new St.Button({style_class: 'dock-newsfeed-card', x_expand: true});
-            const vb = new St.BoxLayout({vertical: true, x_expand: true});
+            const cardBtn = new St.Button({
+                style_class: 'dock-newsfeed-card',
+                x_expand: true, x_align: Clutter.ActorAlign.FILL,
+            });
+            const vb = new St.BoxLayout({
+                vertical: true, x_expand: true, x_align: Clutter.ActorAlign.FILL,
+            });
             if (it.img) {
-                const imgW = new St.Widget({style_class: 'dock-newsfeed-img'});
-                imgW.set_height(150);
+                // Empty St.Widget: give it an explicit size (and let it stretch)
+                // so the background image actually has an area to paint on.
+                const imgW = new St.Widget({
+                    style_class: 'dock-newsfeed-img',
+                    x_expand: true, x_align: Clutter.ActorAlign.FILL,
+                });
+                imgW.set_size(404, 150);
                 vb.add_child(imgW);
                 loadNewsImage(imgSession, it.img, imgW);
             }
