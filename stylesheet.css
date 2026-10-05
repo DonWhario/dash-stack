@@ -780,3 +780,72 @@
 .dock-appgrid-widget-slot {
     padding: 2px;
 }
+
+/* --------------------------------------------------------------------------
+ * Widget de Fotos (formato Polaroid): marco blanco, foto arriba y pie debajo.
+ * -------------------------------------------------------------------------- */
+.dock-widget-photos {
+    background-color: #fafafa;
+    border: 1px solid rgba(0, 0, 0, 0.18);
+    border-radius: 4px;
+    padding: 4px 4px 2px 4px;
+    spacing: 2px;
+}
+
+.dock-photo-img {
+    border-radius: 2px;
+    background-color: #d8d8d8;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+.dock-photo-cap {
+    color: #2a2a2a;
+    font-size: 8pt;
+    text-align: center;
+}
+
+/* ---- Polaroid popup (vista grande con anterior/siguiente) ---- */
+.dock-photos-popup {
+    border-radius: 14px;
+    padding: 12px;
+    spacing: 10px;
+}
+
+.dock-photos-framebtn {
+    padding: 0;
+    border-radius: 6px;
+}
+
+.dock-photos-frame {
+    background-color: #fafafa;
+    border: 1px solid rgba(0, 0, 0, 0.18);
+    border-radius: 6px;
+    padding: 10px 10px 6px 10px;
+    spacing: 8px;
+}
+
+.dock-photos-big {
+    border-radius: 3px;
+    background-color: #d8d8d8;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+.dock-photos-bigcap {
+    color: #2a2a2a;
+    font-size: 10pt;
+    text-align: center;
+}
+
+.dock-photos-nav {
+    spacing: 8px;
+}
+
+.dock-photos-navbtn {
+    color: #ffffff;
+    padding: 6px;
+    border-radius: 8px;
+}
+
+.dock-photos-navbtn:hover {
+    background-color: rgba(255, 255, 255, 0.12);
+}

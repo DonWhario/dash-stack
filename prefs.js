@@ -755,6 +755,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             ['system', _('Añadir: Sistema'), _('CPU, RAM y batería con mini gráfico'), 'utilities-system-monitor-symbolic'],
             ['clock', _('Añadir: Reloj'), _('Hora y fecha'), 'preferences-system-time-symbolic'],
             ['news', _('Añadir: Noticias'), _('Titulares por país (Google News)'), 'application-rss+xml-symbolic'],
+            ['photos', _('Añadir: Fotos'), _('Pase de fotos del sistema en formato Polaroid'), 'image-x-generic-symbolic'],
             ['script', _('Añadir: Script'), _('Muestra la salida de un comando tuyo'), 'utilities-terminal-symbolic'],
         ];
         let shown = 0;
@@ -782,6 +783,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         case 'system': return _('Sistema');
         case 'clock': return _('Reloj');
         case 'news': return _('Noticias');
+        case 'photos': return _('Fotos');
         case 'script': return _('Script');
         default: return _('Widget');
         }
@@ -903,6 +905,41 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             exp.add_row(new Adw.ActionRow({
                 subtitle: _('Titulares de Google News para el país elegido. Un clic en el widget abre la lista; cada titular se abre en el navegador.'),
             }));
+        } else if (w.type === 'photos') {
+            const folder = new Adw.EntryRow({title: _('Carpeta (vacío = Imágenes)')});
+            folder.set_text(w.folder || '');
+            const saveFolder = () => this._updateWidget(w.id, {folder: folder.get_text().trim()});
+            folder.connect('apply', saveFolder);
+            // Button: pick a folder
+            const pick = new Gtk.Button({
+                icon_name: 'folder-open-symbolic',
+                valign: Gtk.Align.CENTER,
+                css_classes: ['flat'],
+            });
+            pick.set_tooltip_text(_('Elegir carpeta…'));
+            pick.connect('clicked', () => {
+                const dialog = new Gtk.FileDialog({title: _('Elegir carpeta de fotos')});
+                dialog.select_folder(this._window, null, (dlg, res) => {
+                    try {
+                        const f = dlg.select_folder_finish(res);
+                        if (f) {
+                            folder.set_text(f.get_path());
+                            saveFolder();
+                        }
+                    } catch (_e) { /* cancelled */ }
+                });
+            });
+            folder.add_suffix(pick);
+            exp.add_row(folder);
+            const iv = new Adw.SpinRow({
+                title: _('Intervalo (s)'),
+                adjustment: new Gtk.Adjustment({lower: 2, upper: 3600, step_increment: 1, value: w.interval || 8}),
+            });
+            iv.connect('notify::value', () => this._updateWidget(w.id, {interval: Math.round(iv.get_value())}));
+            exp.add_row(iv);
+            exp.add_row(new Adw.ActionRow({
+                subtitle: _('Muestra las fotos de la carpeta (y subcarpetas) como Polaroid. Un clic abre una vista grande con anterior/siguiente y botón para abrir en el visor.'),
+            }));
         } else {
             exp.add_row(new Adw.ActionRow({subtitle: _('Sin ajustes. Controla el reproductor activo.')}));
         }
@@ -922,6 +959,8 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             Object.assign(w, {format24: true, showDate: true});
         else if (type === 'news')
             w.country = 'CL';
+        else if (type === 'photos')
+            Object.assign(w, {folder: '', interval: 8});
         widgets.push(w);
         writeWidgets(this._settings, widgets);
         this._refreshWidgetList();

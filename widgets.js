@@ -65,6 +65,7 @@ export function makeWidget(spec, iconSize, _, lang, hooks) {
     case 'clock': return makeClock(spec, iconSize, _);
     case 'script': return makeScript(spec, iconSize, _);
     case 'news': return makeNews(spec, iconSize, _, lang, hooks);
+    case 'photos': return makePhotos(spec, iconSize, _);
     default: return makePlaceholder(_);
     }
 }
@@ -1247,4 +1248,190 @@ function openNews(sourceActor, items, _) {
     }
     popup = showPopup(container, sourceActor);
     return popup;
+}
+
+// --------------------------------------------------------------------- Photos
+// A Polaroid-style slideshow of the user's local photos.
+const PHOTO_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'jfif', 'avif'];
+
+function picturesDir() {
+    try {
+        const d = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_PICTURES);
+        if (d) return d;
+    } catch (_e) { /* ignore */ }
+    const home = GLib.get_home_dir();
+    for (const n of ['Imágenes', 'Pictures', 'Imagenes', 'Fotos']) {
+        const p = GLib.build_filenamev([home, n]);
+        if (GLib.file_test(p, GLib.FileTest.IS_DIR))
+            return p;
+    }
+    return home;
+}
+
+// Lists image files under `dir` (up to depth 2), capped at `cap` entries.
+function listImages(dir, cap) {
+    const out = [];
+    const walk = (path, depth) => {
+        if (out.length >= cap || depth > 2)
+            return;
+        let en;
+        try {
+            en = Gio.File.new_for_path(path).enumerate_children(
+                'standard::name,standard::type,standard::is-hidden',
+                Gio.FileQueryInfoFlags.NONE, null);
+        } catch (_e) {
+            return;
+        }
+        let info;
+        while ((info = en.next_file(null)) !== null) {
+            if (out.length >= cap)
+                break;
+            if (info.get_is_hidden())
+                continue;
+            const name = info.get_name();
+            const child = GLib.build_filenamev([path, name]);
+            if (info.get_file_type() === Gio.FileType.DIRECTORY) {
+                walk(child, depth + 1);
+            } else {
+                const dot = name.lastIndexOf('.');
+                const ext = dot >= 0 ? name.slice(dot + 1).toLowerCase() : '';
+                if (PHOTO_EXTS.includes(ext))
+                    out.push(child);
+            }
+        }
+        try { en.close(null); } catch (_e) { /* ok */ }
+    };
+    walk(dir, 0);
+    return out;
+}
+
+function shuffle(a) {
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+}
+
+function photoName(p) {
+    const b = GLib.path_get_basename(p);
+    const dot = b.lastIndexOf('.');
+    return dot > 0 ? b.slice(0, dot) : b;
+}
+
+function makePhotos(spec, iconSize, _) {
+    const box = new St.BoxLayout({
+        style_class: 'dock-widget dock-widget-photos',
+        reactive: true,
+        vertical: true,
+        y_align: CENTER,
+    });
+    const ph = Math.max(40, Math.round(iconSize * 0.9));
+    const pw = Math.round(ph * 1.35);
+    const photo = new St.Widget({style_class: 'dock-photo-img'});
+    photo.set_size(pw, ph);
+    box.add_child(photo);
+    const cap = new St.Label({style_class: 'dock-photo-cap'});
+    cap.clutter_text.set_ellipsize(3 /* END */);
+    cap.set_style(`max-width: ${pw + 8}px;`);
+    box.add_child(cap);
+
+    const dir = (spec.folder && spec.folder.trim()) ? spec.folder.trim() : picturesDir();
+    let images = shuffle(listImages(dir, 400));
+    let idx = 0;
+
+    const show = () => {
+        if (!images.length) { cap.text = _('Sin fotos'); return; }
+        const p = images[idx % images.length];
+        photo.set_style(
+            `background-image: url("${Gio.File.new_for_path(p).get_uri()}"); ` +
+            'background-size: cover; background-position: center;');
+        cap.text = photoName(p);
+    };
+    show();
+
+    onClick(box, () => {
+        if (images.length)
+            openPhotos(box, images, idx % images.length, _);
+    });
+
+    const interval = Math.max(2, spec.interval || 8);
+    const timer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, interval, () => {
+        if (images.length) { idx = (idx + 1) % images.length; show(); }
+        return GLib.SOURCE_CONTINUE;
+    });
+    // Rescan occasionally so newly added photos show up.
+    const rescan = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 600, () => {
+        const fresh = listImages(dir, 400);
+        if (fresh.length) { images = shuffle(fresh); idx = 0; show(); }
+        return GLib.SOURCE_CONTINUE;
+    });
+
+    return {
+        actor: box,
+        destroy() {
+            if (timer) GLib.source_remove(timer);
+            if (rescan) GLib.source_remove(rescan);
+        },
+    };
+}
+
+// Larger Polaroid popup with prev/next; clicking the photo opens it in the
+// default image viewer.
+function openPhotos(sourceActor, images, startIdx, _) {
+    let idx = startIdx || 0;
+    const wrap = (i) => ((i % images.length) + images.length) % images.length;
+
+    const container = new St.BoxLayout({style_class: 'dock-photos-popup', vertical: true});
+
+    const frame = new St.BoxLayout({style_class: 'dock-photos-frame', vertical: true});
+    const big = new St.Widget({style_class: 'dock-photos-big'});
+    big.set_size(360, 260);
+    frame.add_child(big);
+    const bigCap = new St.Label({style_class: 'dock-photos-bigcap'});
+    bigCap.clutter_text.set_ellipsize(3);
+    frame.add_child(bigCap);
+    const frameBtn = new St.Button({style_class: 'dock-photos-framebtn', child: frame});
+    container.add_child(frameBtn);
+
+    const nav = new St.BoxLayout({style_class: 'dock-photos-nav'});
+    const prev = new St.Button({
+        style_class: 'dock-photos-navbtn',
+        child: new St.Icon({icon_name: 'go-previous-symbolic', icon_size: 18}),
+    });
+    const spacer = new St.Widget({x_expand: true});
+    const openBtn = new St.Button({
+        style_class: 'dock-photos-navbtn',
+        child: new St.Icon({icon_name: 'image-x-generic-symbolic', icon_size: 18}),
+    });
+    const next = new St.Button({
+        style_class: 'dock-photos-navbtn',
+        child: new St.Icon({icon_name: 'go-next-symbolic', icon_size: 18}),
+    });
+    nav.add_child(prev);
+    nav.add_child(spacer);
+    nav.add_child(openBtn);
+    nav.add_child(next);
+    container.add_child(nav);
+
+    const render = () => {
+        const p = images[wrap(idx)];
+        big.set_style(
+            `background-image: url("${Gio.File.new_for_path(p).get_uri()}"); ` +
+            'background-size: cover; background-position: center;');
+        bigCap.text = GLib.path_get_basename(p);
+    };
+    const openCurrent = () => {
+        try {
+            Gio.AppInfo.launch_default_for_uri(
+                Gio.File.new_for_path(images[wrap(idx)]).get_uri(), null);
+        } catch (_e) { /* ok */ }
+    };
+    prev.connect('clicked', () => { idx = wrap(idx - 1); render(); });
+    next.connect('clicked', () => { idx = wrap(idx + 1); render(); });
+    frameBtn.connect('clicked', openCurrent);
+    openBtn.connect('clicked', openCurrent);
+    render();
+
+    return showPopup(container, sourceActor);
 }
