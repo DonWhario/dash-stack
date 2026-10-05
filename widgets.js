@@ -1734,6 +1734,10 @@ function downloadAndCrop(session, imgUrl, base, size, icon) {
 // fetches the article page and extracts its og:image. Keyed/cached by the
 // article URL, so re-opens reuse the cropped thumbnail.
 function loadNewsThumb(session, articleUrl, directImg, icon, size) {
+    // Google News links are redirects whose og:image is the generic GN logo;
+    // without a direct image there's nothing useful to show.
+    if (!directImg && (!articleUrl || articleUrl.includes('news.google.com')))
+        return;
     const base = newsImageBase(articleUrl || directImg || '');
     const sq = `${base}.sq${size}.png`;
     if (GLib.file_test(sq, GLib.FileTest.EXISTS)) { applyThumb(icon, sq); return; }
@@ -1797,6 +1801,9 @@ function makeNewsGrid(spec, _, hooks) {
     const rawCache = hooks && spec.id ? hooks.getCache(spec.id) : null;
     const cache = rawCache && typeof rawCache === 'object' ? rawCache : {};
     let items = (cache.country === code && Array.isArray(cache.items)) ? cache.items : [];
+    // If the cache is recent, show it and skip the immediate GDELT call (avoids
+    // hammering/rate-limiting GDELT every time the grid is reopened).
+    const fresh = items.length && cache.ts && (Date.now() - cache.ts < 14 * 60 * 1000);
 
     const imgSession = new Soup.Session();
 
@@ -1861,7 +1868,7 @@ function makeNewsGrid(spec, _, hooks) {
         items = newItems;
         render();
         if (hooks && spec.id)
-            hooks.setCache(spec.id, {items, country: code});
+            hooks.setCache(spec.id, {items, country: code, ts: Date.now()});
     };
 
     // Fallback: Google News RSS (text only) when GDELT yields nothing.
@@ -1905,12 +1912,13 @@ function makeNewsGrid(spec, _, hooks) {
             })).filter(x => x.title && x.link);
             if (mapped.length)
                 commit(mapped);
-            else
-                fetchGoogle();   // fall back to text headlines
+            else if (!items.length)
+                fetchGoogle();   // only fall back when we have nothing cached
         });
     };
 
-    fetchGdelt();
+    if (!fresh)
+        fetchGdelt();
     timer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 900, () => { fetchGdelt(); return GLib.SOURCE_CONTINUE; });
 
     return {
