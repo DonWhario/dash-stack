@@ -156,6 +156,7 @@ export default class DockStacksExtension extends Extension {
         this._appGridClosing = false;
         this._appGridPanel = null;
         this._appGridBg = null;
+        this._gridWidgetInstances = [];   // live widgets shown inside the app grid
         this._panelIslandActive = false;
 
         this._startupCompleteId = 0;
@@ -1434,93 +1435,73 @@ export default class DockStacksExtension extends Extension {
         return tokens.some(t => list.includes(t));
     }
 
-    // Compact weather card for the bottom of the app-grid sidebar. Reuses the
-    // data cached by the weather widget (location, temperature, condition, icon,
-    // background and — if the forecast was opened — wind/pressure/humidity), so
-    // it shows the same info without extra network calls. Returns null when
-    // there is no weather widget configured.
-    _appGridWeatherCard() {
+    // Shared cache hooks for dock widgets (weather/news persist their last
+    // snapshot per widget id, so they show instantly and don't flicker).
+    _widgetHooks() {
+        return {
+            getCache: (id) => this._weatherCache[id] || null,
+            setCache: (id, patch) => {
+                this._weatherCache[id] = Object.assign(
+                    {}, this._weatherCache[id] || {}, patch);
+                this._saveWeatherCache();
+            },
+        };
+    }
+
+    // Renders the configured dock widgets at the END of the app grid, shown only
+    // in the "Favoritos" category. These are LIVE widget instances (same as in
+    // the dock), created on open and torn down by _destroyGridWidgets() so their
+    // timers/D-Bus don't leak when the grid repopulates or closes.
+    _appendGridWidgets(box) {
         const widgets = safeParseWidgets(this._settings.get_string('widgets'));
-        const w = widgets.find(x => x && x.type === 'weather');
-        if (!w)
-            return null;
-        const info = (this._weatherCache && this._weatherCache[w.id]) || {};
-        const cur = info.fc && info.fc.cur ? info.fc.cur : null;
+        if (!widgets.length)
+            return;
+        const iconSize = this._settings.get_int('icon-size');
+        const gridW = this._appGridGridWidth || 600;
+        const SLOT = 200;                                   // approx. slot per widget
+        const perRow = Math.max(1, Math.floor(gridW / SLOT));
 
-        // Split the widget's "18°C · Lluvia" subtitle into temp + condition.
-        let subTemp = '', subCond = '';
-        if (typeof info.sub === 'string' && info.sub.includes('·')) {
-            const parts = info.sub.split('·');
-            subTemp = parts[0].trim();
-            subCond = parts.slice(1).join('·').trim();
-        } else if (typeof info.sub === 'string') {
-            subCond = info.sub.trim();
-        }
-        const bigTemp = (cur && cur.temp) || subTemp || '…';
-
-        const card = new St.BoxLayout({
-            style_class: 'dock-appgrid-weather',
-            orientation: Clutter.Orientation.VERTICAL,
-            x_expand: true,
-        });
-        if (info.bg) {
-            card.set_style(
-                `background-image: url("${info.bg}"); background-size: cover; background-position: center;`);
-        }
-
-        // Prefer the user's manual label ("Santiago, Chile" → "Santiago") over a
-        // possibly stale cached area name, matching the widget's own title.
-        const manualLabel = (w.location || '').split(',')[0].trim();
-        const loc = new St.Label({
-            style_class: 'dock-appgrid-weather-loc',
-            text: manualLabel || info.title || _('Clima'),
-            x_expand: true,
-            x_align: Clutter.ActorAlign.START,
-        });
-        card.add_child(loc);
-
-        const mainRow = new St.BoxLayout({
-            orientation: Clutter.Orientation.HORIZONTAL,
-            x_expand: true,
-        });
-        mainRow.add_child(new St.Label({
-            style_class: 'dock-appgrid-weather-temp',
-            text: bigTemp,
-            x_expand: true,
-            x_align: Clutter.ActorAlign.START,
-            y_align: Clutter.ActorAlign.CENTER,
+        box.add_child(new St.Label({
+            style_class: 'dock-appgrid-widgets-title',
+            text: _('Widgets'),
         }));
-        const condBox = new St.BoxLayout({
-            orientation: Clutter.Orientation.VERTICAL,
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-        if (info.icon) {
-            condBox.add_child(new St.Icon({
-                style_class: 'dock-appgrid-weather-icon',
-                icon_name: info.icon,
-                icon_size: 30,
-                x_align: Clutter.ActorAlign.END,
-            }));
-        }
-        if (subCond) {
-            condBox.add_child(new St.Label({
-                style_class: 'dock-appgrid-weather-cond',
-                text: subCond,
-                x_align: Clutter.ActorAlign.END,
-            }));
-        }
-        mainRow.add_child(condBox);
-        card.add_child(mainRow);
 
-        if (cur && (cur.wind || cur.press || cur.hum)) {
-            card.add_child(new St.Label({
-                style_class: 'dock-appgrid-weather-det',
-                text: [cur.wind, cur.press, cur.hum].filter(Boolean).join('    '),
-                x_expand: true,
-                x_align: Clutter.ActorAlign.START,
+        let row = null;
+        widgets.forEach((wspec, i) => {
+            if (i % perRow === 0) {
+                row = new St.BoxLayout({style_class: 'dock-appgrid-widgets-row'});
+                box.add_child(row);
+            }
+            let inst;
+            try {
+                inst = makeWidget(wspec, iconSize, _, resolveLanguage(this._settings),
+                    this._widgetHooks());
+            } catch (e) {
+                logError(e, 'Dock Stack: widget en la rejilla');
+                return;
+            }
+            this._gridWidgetInstances.push(inst);
+            row.add_child(new St.Bin({
+                style_class: 'dock-appgrid-widget-slot',
+                child: inst.actor,
             }));
+        });
+    }
+
+    // Stops timers/D-Bus of the grid's widget instances (actors are destroyed
+    // separately with the grid contents).
+    _destroyGridWidgets() {
+        if (this._gridWidgetInstances) {
+            for (const w of this._gridWidgetInstances) {
+                try {
+                    if (w && w.destroy)
+                        w.destroy();
+                } catch (e) {
+                    logError(e, 'Dock Stack: destroy widget de rejilla');
+                }
+            }
         }
-        return card;
+        this._gridWidgetInstances = [];
     }
 
     // -------------------------------------------- custom apps grid
@@ -1588,6 +1569,7 @@ export default class DockStacksExtension extends Extension {
         const columns = Math.max(3, Math.min(8,
             Math.floor((availGrid - FRAME_EXTRA) / CELL_STEP)));
         const gridAreaW = columns * CELL_STEP + FRAME_EXTRA;
+        this._appGridGridWidth = gridAreaW;   // used to wrap the widgets row
         const pw = sidebarW + gap + gridAreaW;
 
         // Transparent container holding the two separate frames
@@ -1677,13 +1659,8 @@ export default class DockStacksExtension extends Extension {
             sidebarInner.add_child(catBtn);
         }
 
-        // Spacer that pushes the weather card + settings button to the bottom
+        // Spacer that pushes the settings button to the bottom
         sidebarInner.add_child(new St.Widget({y_expand: true}));
-
-        // Weather info at the bottom of the grid (reuses the weather widget data)
-        const weatherCard = this._appGridWeatherCard();
-        if (weatherCard)
-            sidebarInner.add_child(weatherCard);
 
         // Settings button (opens preferences) with a custom icon
         const cfgBtn = new St.Button({
@@ -1864,6 +1841,7 @@ export default class DockStacksExtension extends Extension {
         const box = this._appGridBox;
         if (!box)
             return;
+        this._destroyGridWidgets();   // stop timers of widgets shown previously
         box.destroy_all_children();
         const q = (query || '').toLowerCase().trim();
         const cat = this._appGridCategory || 'all';
@@ -1913,6 +1891,11 @@ export default class DockStacksExtension extends Extension {
             });
             box.add_child(empty);
         }
+
+        // Dock widgets at the END of the grid, only in "Favoritos" and when not
+        // searching (they are not search results).
+        if (cat === 'favorites' && !q)
+            this._appendGridWidgets(box);
     }
 
     _launchFirstApp() {
@@ -2000,6 +1983,7 @@ export default class DockStacksExtension extends Extension {
         const panel = this._appGridPanel;
         const bg = this._appGridBg;
         const finish = () => {
+            this._destroyGridWidgets();   // stop widget timers/D-Bus before teardown
             try {
                 overlay.destroy();
             } catch (_e) { /* already destroyed */ }
