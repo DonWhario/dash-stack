@@ -832,10 +832,13 @@
     background-color: rgba(255, 255, 255, 0.12);
 }
 
-.dock-newsfeed-img {
+.dock-newsfeed-row {
+    spacing: 10px;
+}
+
+.dock-newsfeed-thumb {
     border-radius: 8px;
     background-color: rgba(255, 255, 255, 0.06);
-    margin-bottom: 8px;
 }
 
 .dock-newsfeed-meta {

@@ -20,6 +20,7 @@ import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
 import Soup from 'gi://Soup';
 import Shell from 'gi://Shell';
+import GdkPixbuf from 'gi://GdkPixbuf';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as Calendar from 'resource:///org/gnome/shell/ui/calendar.js';
@@ -1662,20 +1663,45 @@ function existingNewsImage(base) {
     return null;
 }
 
-// Downloads `url` once into the news image cache (with a real extension) and
-// paints it on `widget`. No get_stage() gate, so cached images also paint
-// during the initial (pre-staged) render.
-function loadNewsImage(session, url, widget) {
-    const apply = (path) => {
-        try {
-            widget.set_style(
-                `background-image: url("${Gio.File.new_for_path(path).get_uri()}"); ` +
-                'background-size: cover; background-position: center;');
-        } catch (_e) { /* actor gone */ }
-    };
+// Center-crops `srcPath` to a square of `size`px (cached). Returns the dest
+// path or null. Using a pre-cropped square means St.Icon (contain) fills it
+// with no letterboxing.
+function makeSquareThumb(srcPath, size) {
+    const dest = `${srcPath}.sq${size}.png`;
+    if (GLib.file_test(dest, GLib.FileTest.EXISTS))
+        return dest;
+    try {
+        const pb = GdkPixbuf.Pixbuf.new_from_file(srcPath);
+        const w = pb.get_width(), h = pb.get_height();
+        const s = Math.min(w, h);
+        const sub = pb.new_subpixbuf(Math.floor((w - s) / 2), Math.floor((h - s) / 2), s, s);
+        const scaled = sub.scale_simple(size, size, GdkPixbuf.InterpType.BILINEAR);
+        scaled.savev(dest, 'png', [], []);
+        return dest;
+    } catch (_e) {
+        return null;
+    }
+}
+
+// Paints a cached square thumbnail onto an St.Icon the SAME way the music
+// widget shows album art (Gio.FileIcon) — a rendering path proven to work.
+function applyThumb(iconActor, path) {
+    try {
+        iconActor.gicon = new Gio.FileIcon({file: Gio.File.new_for_path(path)});
+    } catch (_e) { /* actor gone */ }
+}
+
+// Downloads `url` once, crops it to a square `size`px and shows it on `icon`.
+function loadNewsImage(session, url, icon, size) {
     const base = newsImageBase(url);
-    const existing = existingNewsImage(base);
-    if (existing) { apply(existing); return; }
+    const sq = `${base}.sq${size}.png`;
+    if (GLib.file_test(sq, GLib.FileTest.EXISTS)) { applyThumb(icon, sq); return; }
+    const orig = existingNewsImage(base);
+    if (orig) {
+        const t = makeSquareThumb(orig, size);
+        if (t) applyThumb(icon, t);
+        return;
+    }
     let msg;
     try { msg = Soup.Message.new('GET', url); } catch (_e) { return; }
     try { msg.request_headers.append('User-Agent', 'Mozilla/5.0'); } catch (_e) { /* ok */ }
@@ -1687,7 +1713,8 @@ function loadNewsImage(session, url, widget) {
                 const path = base + sniffImageExt(data);
                 Gio.File.new_for_path(path).replace_contents(
                     data, null, false, Gio.FileCreateFlags.REPLACE_DESTINATION, null);
-                apply(path);
+                const t = makeSquareThumb(path, size);
+                if (t) applyThumb(icon, t);
             }
         } catch (_e) { /* ignore image errors */ }
     });
@@ -1740,20 +1767,24 @@ function makeNewsGrid(spec, _, hooks) {
                 style_class: 'dock-newsfeed-card',
                 x_expand: true, x_align: Clutter.ActorAlign.FILL,
             });
+            const row = new St.BoxLayout({
+                style_class: 'dock-newsfeed-row',
+                x_expand: true, x_align: Clutter.ActorAlign.FILL,
+            });
+            if (it.img) {
+                // Thumbnail painted the proven way (St.Icon + Gio.FileIcon),
+                // pre-cropped to a square so it fills the icon with no gaps.
+                const thumb = new St.Icon({
+                    style_class: 'dock-newsfeed-thumb',
+                    icon_size: 84,
+                    y_align: Clutter.ActorAlign.START,
+                });
+                row.add_child(thumb);
+                loadNewsImage(imgSession, it.img, thumb, 168);
+            }
             const vb = new St.BoxLayout({
                 vertical: true, x_expand: true, x_align: Clutter.ActorAlign.FILL,
             });
-            if (it.img) {
-                // Empty St.Widget: give it an explicit size (and let it stretch)
-                // so the background image actually has an area to paint on.
-                const imgW = new St.Widget({
-                    style_class: 'dock-newsfeed-img',
-                    x_expand: true, x_align: Clutter.ActorAlign.FILL,
-                });
-                imgW.set_size(404, 150);
-                vb.add_child(imgW);
-                loadNewsImage(imgSession, it.img, imgW);
-            }
             const meta = new St.BoxLayout({style_class: 'dock-newsfeed-meta'});
             meta.add_child(new St.Label({
                 style_class: 'dock-newsfeed-source', text: it.source || _('Noticias'),
@@ -1765,7 +1796,8 @@ function makeNewsGrid(spec, _, hooks) {
             const h = new St.Label({style_class: 'dock-newsfeed-headline', text: it.title});
             h.clutter_text.set_line_wrap(true);
             vb.add_child(h);
-            cardBtn.set_child(vb);
+            row.add_child(vb);
+            cardBtn.set_child(row);
             cardBtn.connect('clicked', () => {
                 if (it.link) {
                     try { Gio.AppInfo.launch_default_for_uri(it.link, null); } catch (_e) { /* ok */ }
