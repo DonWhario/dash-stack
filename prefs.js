@@ -754,6 +754,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             ['weather', _('Añadir: Clima'), _('Temperatura y condición (automático)'), 'weather-clear-symbolic'],
             ['system', _('Añadir: Sistema'), _('CPU, RAM y batería con mini gráfico'), 'utilities-system-monitor-symbolic'],
             ['clock', _('Añadir: Reloj'), _('Hora y fecha'), 'preferences-system-time-symbolic'],
+            ['news', _('Añadir: Noticias'), _('Titulares por país (Google News)'), 'application-rss+xml-symbolic'],
             ['script', _('Añadir: Script'), _('Muestra la salida de un comando tuyo'), 'utilities-terminal-symbolic'],
         ];
         let shown = 0;
@@ -780,6 +781,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         case 'weather': return _('Clima');
         case 'system': return _('Sistema');
         case 'clock': return _('Reloj');
+        case 'news': return _('Noticias');
         case 'script': return _('Script');
         default: return _('Widget');
         }
@@ -885,6 +887,22 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             const swDate = new Adw.SwitchRow({title: _('Mostrar fecha'), active: w.showDate !== false});
             swDate.connect('notify::active', () => this._updateWidget(w.id, {showDate: swDate.get_active()}));
             exp.add_row(swDate);
+        } else if (w.type === 'news') {
+            const codes = ['CL', 'AR', 'MX', 'PE', 'CO', 'ES', 'US', 'GB', 'BR', 'FR', 'DE', 'IT'];
+            const labels = ['Chile', 'Argentina', 'México', 'Perú', 'Colombia', 'España',
+                'Estados Unidos', 'Reino Unido', 'Brasil', 'Francia', 'Alemania', 'Italia'];
+            const model = new Gtk.StringList();
+            labels.forEach(l => model.append(l));
+            let sel = codes.indexOf((w.country || 'CL').toUpperCase());
+            if (sel < 0)
+                sel = 0;
+            const combo = new Adw.ComboRow({title: _('País'), model, selected: sel});
+            combo.connect('notify::selected', () =>
+                this._updateWidget(w.id, {country: codes[combo.get_selected()] || 'CL'}));
+            exp.add_row(combo);
+            exp.add_row(new Adw.ActionRow({
+                subtitle: _('Titulares de Google News para el país elegido. Un clic en el widget abre la lista; cada titular se abre en el navegador.'),
+            }));
         } else {
             exp.add_row(new Adw.ActionRow({subtitle: _('Sin ajustes. Controla el reproductor activo.')}));
         }
@@ -902,6 +920,8 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             w.fields = {cpu: true, ram: true, battery: true};
         else if (type === 'clock')
             Object.assign(w, {format24: true, showDate: true});
+        else if (type === 'news')
+            w.country = 'CL';
         widgets.push(w);
         writeWidgets(this._settings, widgets);
         this._refreshWidgetList();

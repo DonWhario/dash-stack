@@ -64,6 +64,7 @@ export function makeWidget(spec, iconSize, _, lang, hooks) {
     case 'system': return makeSystem(spec, iconSize, _);
     case 'clock': return makeClock(spec, iconSize, _);
     case 'script': return makeScript(spec, iconSize, _);
+    case 'news': return makeNews(spec, iconSize, _, lang, hooks);
     default: return makePlaceholder(_);
     }
 }
@@ -1081,4 +1082,169 @@ function makeScript(spec, iconSize, _) {
             if (cancel) { try { cancel.cancel(); } catch (_e) { /* ok */ } }
         },
     };
+}
+
+// --------------------------------------------------------------------- News
+// Country → Google News RSS parameters (hl = interface language, gl = country,
+// ceid = country:lang). No API key needed; the feed is public RSS/XML.
+const NEWS_COUNTRIES = {
+    CL: {hl: 'es-419', gl: 'CL', lang: 'es',     name: 'Chile'},
+    AR: {hl: 'es-419', gl: 'AR', lang: 'es',     name: 'Argentina'},
+    MX: {hl: 'es-419', gl: 'MX', lang: 'es',     name: 'México'},
+    PE: {hl: 'es-419', gl: 'PE', lang: 'es',     name: 'Perú'},
+    CO: {hl: 'es-419', gl: 'CO', lang: 'es',     name: 'Colombia'},
+    ES: {hl: 'es',     gl: 'ES', lang: 'es',     name: 'España'},
+    US: {hl: 'en-US',  gl: 'US', lang: 'en',     name: 'Estados Unidos'},
+    GB: {hl: 'en-GB',  gl: 'GB', lang: 'en',     name: 'Reino Unido'},
+    BR: {hl: 'pt-BR',  gl: 'BR', lang: 'pt-419', name: 'Brasil'},
+    FR: {hl: 'fr',     gl: 'FR', lang: 'fr',     name: 'Francia'},
+    DE: {hl: 'de',     gl: 'DE', lang: 'de',     name: 'Alemania'},
+    IT: {hl: 'it',     gl: 'IT', lang: 'it',     name: 'Italia'},
+};
+
+// Decodes XML/HTML entities and strips CDATA wrappers from RSS text.
+function decodeEntities(s) {
+    if (!s)
+        return '';
+    return String(s)
+        .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+        .replace(/<[^>]+>/g, '')            // drop stray inline tags
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"').replace(/&#0*39;/g, "'").replace(/&apos;/g, "'")
+        .replace(/&#(\d+);/g, (_m, n) => { try { return String.fromCharCode(Number(n)); } catch (_e) { return ''; } })
+        .replace(/&amp;/g, '&');            // must be last
+}
+
+// Extracts up to `max` {title, link} items from an RSS feed.
+function parseRssItems(xml, max) {
+    const items = [];
+    const re = /<item\b[^>]*>([\s\S]*?)<\/item>/g;
+    let m;
+    while ((m = re.exec(xml)) && items.length < (max || 20)) {
+        const block = m[1];
+        const tm = block.match(/<title>([\s\S]*?)<\/title>/);
+        const lm = block.match(/<link>([\s\S]*?)<\/link>/);
+        const title = decodeEntities(tm ? tm[1] : '').trim();
+        const link = decodeEntities(lm ? lm[1] : '').trim();
+        if (title)
+            items.push({title, link});
+    }
+    return items;
+}
+
+function makeNews(spec, iconSize, _, lang, hooks) {
+    const box = card('dock-widget-news');
+    const icon = new St.Icon({
+        style_class: 'dock-widget-art',
+        icon_name: 'application-rss+xml-symbolic',
+        icon_size: iconSize,
+    });
+    // Headline on top (rotating), "Noticias · <country>" below.
+    const {col, title, sub} = textColumn('…', _('Noticias'));
+    col.set_width(Math.round(150 * 1.1));   // a touch wider for headlines
+    box.add_child(icon);
+    box.add_child(col);
+
+    const code = (spec.country || 'CL').toUpperCase();
+    const c = NEWS_COUNTRIES[code] || NEWS_COUNTRIES.CL;
+    const url = `https://news.google.com/rss?hl=${c.hl}&gl=${c.gl}&ceid=${c.gl}:${c.lang}`;
+    sub.text = `${_('Noticias')} · ${c.name}`;
+
+    const rawCache = hooks && spec.id ? hooks.getCache(spec.id) : null;
+    const cache = rawCache && typeof rawCache === 'object' ? rawCache : {};
+    // Only reuse cached headlines if they are for the same country.
+    let items = (cache.country === code && Array.isArray(cache.items)) ? cache.items : [];
+
+    let idx = 0;
+    const showCurrent = () => {
+        title.text = items.length ? items[idx % items.length].title : _('Cargando…');
+    };
+    showCurrent();
+
+    // Single click → popup list of headlines (read `items` at click time).
+    onClick(box, () => openNews(box, items, _));
+
+    const session = new Soup.Session();
+    const fetch = () => {
+        let msg;
+        try {
+            msg = Soup.Message.new('GET', url);
+        } catch (_e) {
+            return; // keep the last shown headlines
+        }
+        try { msg.request_headers.append('User-Agent', 'Mozilla/5.0'); } catch (_e) { /* ok */ }
+        session.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null, (s, res) => {
+            try {
+                const bytes = session.send_and_read_finish(res);
+                const xml = new TextDecoder().decode(bytes.get_data());
+                const parsed = parseRssItems(xml, 20);
+                if (parsed.length) {
+                    items = parsed;
+                    idx = 0;
+                    showCurrent();
+                    if (hooks && spec.id)
+                        hooks.setCache(spec.id, {items, country: code});
+                }
+            } catch (_e) {
+                // Network/parse error: keep the last shown headlines (no clear).
+            }
+        });
+    };
+    fetch();
+
+    // Refresh headlines every 15 min; rotate the shown one every 9 s.
+    const refreshTimer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 900,
+        () => { fetch(); return GLib.SOURCE_CONTINUE; });
+    const rotateTimer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 9, () => {
+        if (items.length) { idx = (idx + 1) % items.length; showCurrent(); }
+        return GLib.SOURCE_CONTINUE;
+    });
+
+    return {
+        actor: box,
+        destroy() {
+            if (refreshTimer) GLib.source_remove(refreshTimer);
+            if (rotateTimer) GLib.source_remove(rotateTimer);
+            try { session.abort(); } catch (_e) { /* ok */ }
+        },
+    };
+}
+
+// Popup with the list of headlines; each opens the article in the browser.
+function openNews(sourceActor, items, _) {
+    const container = new St.BoxLayout({style_class: 'dock-news', vertical: true});
+    const base = sourceActor && sourceActor.width ? sourceActor.width : 0;
+    container.set_width(Math.min(460, Math.max(340, base * 2)));
+
+    container.add_child(new St.Label({style_class: 'dock-news-header', text: _('Noticias')}));
+
+    let popup = null;
+    if (!items || !items.length) {
+        container.add_child(new St.Label({
+            style_class: 'dock-news-empty', text: _('Sin titulares por ahora'),
+        }));
+    } else {
+        const scroll = new St.ScrollView({style_class: 'dock-news-scroll'});
+        scroll.set_policy(St.PolicyType.NEVER, St.PolicyType.AUTOMATIC);
+        const list = new St.BoxLayout({vertical: true});
+        scroll.set_child(list);
+        const max = Math.min(items.length, 15);
+        for (let i = 0; i < max; i++) {
+            const it = items[i];
+            const btn = new St.Button({style_class: 'dock-news-item', x_expand: true});
+            const lbl = new St.Label({text: it.title});
+            lbl.clutter_text.set_line_wrap(true);
+            btn.set_child(lbl);
+            btn.connect('clicked', () => {
+                if (it.link) {
+                    try { Gio.AppInfo.launch_default_for_uri(it.link, null); } catch (_e) { /* ok */ }
+                }
+                if (popup) popup.close();
+            });
+            list.add_child(btn);
+        }
+        container.add_child(scroll);
+    }
+    popup = showPopup(container, sourceActor);
+    return popup;
 }

@@ -713,3 +713,47 @@
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
     padding-top: 5px;
 }
+
+/* --------------------------------------------------------------------------
+ * Widget de noticias (titular rotando) y su popup con la lista de titulares.
+ * -------------------------------------------------------------------------- */
+.dock-widget-news {
+    background-gradient-direction: vertical;
+    background-gradient-start: rgba(28, 42, 74, 0.95);
+    background-gradient-end: rgba(18, 26, 48, 0.95);
+}
+
+.dock-news {
+    border-radius: 14px;
+    padding: 12px 14px;
+    spacing: 8px;
+}
+
+.dock-news-header {
+    color: #ffffff;
+    font-weight: bold;
+    font-size: 12pt;
+    padding-bottom: 2px;
+}
+
+.dock-news-scroll {
+    max-height: 380px;
+}
+
+.dock-news-item {
+    padding: 8px 10px;
+    border-radius: 8px;
+    color: #e8e8e8;
+    font-size: 10pt;
+}
+
+.dock-news-item:hover {
+    background-color: rgba(255, 255, 255, 0.10);
+    color: #ffffff;
+}
+
+.dock-news-empty {
+    color: #b0b0b0;
+    font-size: 10pt;
+    padding: 6px 2px;
+}
