@@ -34,6 +34,29 @@ export function setDockOpacity(op) {
         dockOpacity = op;
 }
 
+// "Vivid colors" option for the dock widgets (weather/system/clock): replaces
+// their muted background images with bright, saturated gradients.
+let vividWidgets = false;
+export function setVividWidgets(b) { vividWidgets = !!b; }
+
+function vividGradient(key) {
+    const g = {
+        clear:  ['#ffd36b', '#ff7a3d'],   // sunny orange
+        partly: ['#7ec8ff', '#3f74ff'],   // blue
+        cloudy: ['#9fb4d4', '#4a5f82'],   // steel
+        fog:    ['#b9c6d6', '#6b7b90'],   // gray-blue
+        rain:   ['#5aa0ff', '#2540c8'],   // deep blue
+        snow:   ['#a9ecff', '#49a6ff'],   // icy
+        storm:  ['#a06bff', '#5726c0'],   // purple
+        clock:  ['#b65bff', '#ff4f9d'],   // purple→pink
+        system: ['#2fe0a0', '#10936f'],   // green/teal
+    };
+    const c = g[key] || g.clear;
+    return 'background-gradient-direction: vertical; ' +
+        `background-gradient-start: ${c[0]}; background-gradient-end: ${c[1]}; ` +
+        'background-image: none;';
+}
+
 function card(extra) {
     return new St.BoxLayout({
         style_class: 'dock-widget ' + (extra || ''),
@@ -911,8 +934,15 @@ function makeWeather(spec, iconSize, _, lang, hooks) {
     let lon = cache.lon != null ? cache.lon : null;
     onClick(box, () => openForecast(box, lat, lon, title.text, _, hooks, spec));
 
-    const setBg = (uri) => box.set_style(
-        `background-image: url("${uri}"); background-size: cover; background-position: center;`);
+    if (vividWidgets)
+        box.add_style_class_name('vivid');
+    // In vivid mode use a bright gradient (by condition) instead of the image.
+    const setBg = (uri) => {
+        if (vividWidgets)
+            return;
+        box.set_style(
+            `background-image: url("${uri}"); background-size: cover; background-position: center;`);
+    };
 
     // Initial state from the cache (last shown), so a rebuild/relaunch keeps the
     // previous look and text instead of flashing/clearing. Sunny only the very
@@ -920,6 +950,8 @@ function makeWeather(spec, iconSize, _, lang, hooks) {
     const soleado = dataUri('soleado.png');
     let lastBg = cache.bg || soleado;
     setBg(lastBg);
+    if (vividWidgets)
+        box.set_style(vividGradient(cache.cat || 'clear'));
     // For a manual location keep the user's label; only trust the cached title
     // when the location is automatic (so a stale resolved name doesn't stick).
     if (manualLabel)
@@ -984,10 +1016,13 @@ function makeWeather(spec, iconSize, _, lang, hooks) {
                     lastBg = bg;
                     setBg(bg);
                 }
+                const cat = weatherCategory(cur.weatherCode);
+                if (vividWidgets)
+                    box.set_style(vividGradient(cat));
                 // Persist the last shown snapshot.
                 if (hooks && spec.id) {
                     hooks.setCache(spec.id, {
-                        bg, title: titleText, sub: subText, icon: iconName, lat, lon,
+                        bg, cat, title: titleText, sub: subText, icon: iconName, lat, lon,
                     });
                 }
             } catch (_e) {
@@ -1049,7 +1084,12 @@ function readBattery() {
 
 function makeSystem(spec, iconSize, _) {
     const box = card('dock-widget-system');
-    setCardBg(box, 'sistemas.png');
+    if (vividWidgets) {
+        box.add_style_class_name('vivid');
+        box.set_style(vividGradient('system'));
+    } else {
+        setCardBg(box, 'sistemas.png');
+    }
     const show = spec.fields || {cpu: true, ram: true, battery: true};
 
     // Mini CPU-usage sparkline (last N samples).
@@ -1122,7 +1162,12 @@ function makeSystem(spec, iconSize, _) {
 
 function makeClock(spec, iconSize, _) {
     const box = card('dock-widget-clock');
-    setCardBg(box, 'reloj.png');
+    if (vividWidgets) {
+        box.add_style_class_name('vivid');
+        box.set_style(vividGradient('clock'));
+    } else {
+        setCardBg(box, 'reloj.png');
+    }
     const info = new St.BoxLayout({style_class: 'dock-widget-text', vertical: true, y_align: CENTER});
     const big = new St.Label({style_class: 'dock-widget-time'});
     const sub = new St.Label({style_class: 'dock-widget-sub'});

@@ -724,6 +724,16 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         window.add(page);
         if (this._prefPages) this._prefPages.push(page);
 
+        // Global widget appearance options.
+        const styleGroup = new Adw.PreferencesGroup({title: _('Apariencia')});
+        page.add(styleGroup);
+        const vividRow = new Adw.SwitchRow({
+            title: _('Colores vivos en el dock'),
+            subtitle: _('Los widgets de la barra (clima, sistema, reloj) usan fondos con gradientes brillantes y llamativos'),
+        });
+        settings.bind('vivid-widgets', vividRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+        styleGroup.add(vividRow);
+
         const listGroup = new Adw.PreferencesGroup({
             title: _('Widgets del dock'),
             description: _('Tarjetas que se muestran en la barra: reproducción, clima, sistema o un script propio.'),

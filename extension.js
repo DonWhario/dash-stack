@@ -18,7 +18,7 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import {SysTrayManager} from './systray.js';
 import {makeTranslator, resolveLanguage} from './translations.js';
-import {makeWidget, setDockOpacity} from './widgets.js';
+import {makeWidget, setDockOpacity, setVividWidgets} from './widgets.js';
 
 // Module-level translator; (re)configured in enable() and when the
 // 'language' key changes. Identity (Spanish) until configured.
@@ -152,6 +152,7 @@ export default class DockStacksExtension extends Extension {
         this._settings = this.getSettings();
         _ = makeTranslator(this._settings);
         setDockOpacity(this._settings.get_int('background-opacity') / 100);
+        setVividWidgets(this._settings.get_boolean('vivid-widgets'));
         this._stackOverlay = null;
         this._stackPopup = null;
         this._stackGrab = null;
@@ -217,6 +218,10 @@ export default class DockStacksExtension extends Extension {
                 this._applyGnomeIntegration();
             else if (key === 'systray')
                 this._applySysTray();
+            else if (key === 'vivid-widgets') {
+                setVividWidgets(this._settings.get_boolean('vivid-widgets'));
+                this._rebuildItems();
+            }
             else if (key === 'panel-island')
                 this._applyPanelIsland();
         });

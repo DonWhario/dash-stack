@@ -89,6 +89,11 @@
       <summary>No abrir la vista de Actividades al iniciar sesión: cerrar el overview cuando termina el arranque para aterrizar en el escritorio</summary>
     </key>
 
+    <key name="vivid-widgets" type="b">
+      <default>false</default>
+      <summary>Colores vivos en los widgets del dock: usar fondos con gradientes brillantes y llamativos (clima, sistema y reloj) en vez de las imágenes</summary>
+    </key>
+
     <key name="startup-sound" type="b">
       <default>false</default>
       <summary>Reproducir un sonido al cargar la extensión (al iniciar sesión)</summary>
