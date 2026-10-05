@@ -1573,12 +1573,74 @@ function openPhotos(sourceActor, images, startIdx, _) {
 }
 
 // ---------------------------------------------------------- Grid: news feed
-// A card feed (image-2 style, text cards) for the menu grid. Google News RSS
-// does not carry per-article images, so cards show source + age + headline.
+// Primary source: GDELT DOC API (public, no key) which returns per-article
+// images (socialimage) and supports country/language filters. Falls back to
+// Google News RSS (text only) if GDELT returns nothing. Images are downloaded
+// once and cached on disk.
+const NEWS_GDELT = {
+    CL: {cc: 'CI', lang: 'spanish'},    AR: {cc: 'AR', lang: 'spanish'},
+    MX: {cc: 'MX', lang: 'spanish'},    PE: {cc: 'PE', lang: 'spanish'},
+    CO: {cc: 'CO', lang: 'spanish'},    ES: {cc: 'SP', lang: 'spanish'},
+    US: {cc: 'US', lang: 'english'},    GB: {cc: 'UK', lang: 'english'},
+    BR: {cc: 'BR', lang: 'portuguese'}, FR: {cc: 'FR', lang: 'french'},
+    DE: {cc: 'GM', lang: 'german'},     IT: {cc: 'IT', lang: 'italian'},
+};
+
+function newsCacheDir() {
+    const dir = GLib.build_filenamev([GLib.get_user_cache_dir(), 'dock-stack', 'news']);
+    try { GLib.mkdir_with_parents(dir, 0o755); } catch (_e) { /* ok */ }
+    return dir;
+}
+
+function cachedImagePath(url) {
+    const hash = GLib.compute_checksum_for_string(GLib.ChecksumType.MD5, url, -1);
+    return GLib.build_filenamev([newsCacheDir(), hash]);
+}
+
+// Downloads `url` once into the news image cache and paints it on `widget`.
+function loadNewsImage(session, url, widget) {
+    const apply = (path) => {
+        if (!widget.get_stage())
+            return;
+        widget.set_style(
+            `background-image: url("${Gio.File.new_for_path(path).get_uri()}"); ` +
+            'background-size: cover; background-position: center;');
+    };
+    const path = cachedImagePath(url);
+    if (GLib.file_test(path, GLib.FileTest.EXISTS)) { apply(path); return; }
+    let msg;
+    try { msg = Soup.Message.new('GET', url); } catch (_e) { return; }
+    try { msg.request_headers.append('User-Agent', 'Mozilla/5.0'); } catch (_e) { /* ok */ }
+    session.send_and_read_async(msg, GLib.PRIORITY_LOW, null, (s, res) => {
+        try {
+            const bytes = session.send_and_read_finish(res);
+            const data = bytes.get_data();
+            if (data && data.length > 128) {
+                Gio.File.new_for_path(path).replace_contents(
+                    data, null, false, Gio.FileCreateFlags.REPLACE_DESTINATION, null);
+                apply(path);
+            }
+        } catch (_e) { /* ignore image errors */ }
+    });
+}
+
+// Relative age from a GDELT "YYYYMMDDTHHMMSSZ" timestamp.
+function gdeltAge(seendate) {
+    const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z?$/.exec(seendate || '');
+    if (!m)
+        return '';
+    const t = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+    const mins = Math.max(0, Math.floor((Date.now() - t) / 60000));
+    if (mins < 60) return `${mins} min`;
+    const h = Math.floor(mins / 60);
+    if (h < 24) return `${h} h`;
+    return `${Math.floor(h / 24)} d`;
+}
+
 function makeNewsGrid(spec, _, hooks) {
     const code = (spec.country || 'CL').toUpperCase();
     const c = NEWS_COUNTRIES[code] || NEWS_COUNTRIES.CL;
-    const url = `https://news.google.com/rss?hl=${c.hl}&gl=${c.gl}&ceid=${c.gl}:${c.lang}`;
+    const g = NEWS_GDELT[code] || NEWS_GDELT.CL;
 
     const container = new St.BoxLayout({style_class: 'dock-newsfeed', vertical: true});
     container.set_width(440);
@@ -1596,6 +1658,8 @@ function makeNewsGrid(spec, _, hooks) {
     const cache = rawCache && typeof rawCache === 'object' ? rawCache : {};
     let items = (cache.country === code && Array.isArray(cache.items)) ? cache.items : [];
 
+    const imgSession = new Soup.Session();
+
     const render = () => {
         list.destroy_all_children();
         if (!items.length) {
@@ -1605,11 +1669,17 @@ function makeNewsGrid(spec, _, hooks) {
         for (const it of items.slice(0, 20)) {
             const cardBtn = new St.Button({style_class: 'dock-newsfeed-card', x_expand: true});
             const vb = new St.BoxLayout({vertical: true, x_expand: true});
+            if (it.img) {
+                const imgW = new St.Widget({style_class: 'dock-newsfeed-img'});
+                imgW.set_height(150);
+                vb.add_child(imgW);
+                loadNewsImage(imgSession, it.img, imgW);
+            }
             const meta = new St.BoxLayout({style_class: 'dock-newsfeed-meta'});
             meta.add_child(new St.Label({
                 style_class: 'dock-newsfeed-source', text: it.source || _('Noticias'),
             }));
-            const age = relativeAge(it.date, _);
+            const age = it.gdelt ? gdeltAge(it.date) : relativeAge(it.date, _);
             if (age)
                 meta.add_child(new St.Label({style_class: 'dock-newsfeed-age', text: `  ·  ${age}`}));
             vb.add_child(meta);
@@ -1629,7 +1699,19 @@ function makeNewsGrid(spec, _, hooks) {
 
     const session = new Soup.Session();
     let timer = 0;
-    const fetch = () => {
+
+    const commit = (newItems) => {
+        if (!newItems.length)
+            return;
+        items = newItems;
+        render();
+        if (hooks && spec.id)
+            hooks.setCache(spec.id, {items, country: code});
+    };
+
+    // Fallback: Google News RSS (text only) when GDELT yields nothing.
+    const fetchGoogle = () => {
+        const url = `https://news.google.com/rss?hl=${c.hl}&gl=${c.gl}&ceid=${c.gl}:${c.lang}`;
         let msg;
         try { msg = Soup.Message.new('GET', url); } catch (_e) { return; }
         try { msg.request_headers.append('User-Agent', 'Mozilla/5.0'); } catch (_e) { /* ok */ }
@@ -1637,24 +1719,51 @@ function makeNewsGrid(spec, _, hooks) {
             try {
                 const bytes = session.send_and_read_finish(res);
                 const xml = new TextDecoder().decode(bytes.get_data());
-                const parsed = parseRssItems(xml, 25);
-                if (parsed.length) {
-                    items = parsed;
-                    render();
-                    if (hooks && spec.id)
-                        hooks.setCache(spec.id, {items, country: code});
-                }
+                commit(parseRssItems(xml, 25).map(x => Object.assign({}, x, {img: '', gdelt: false})));
             } catch (_e) { /* keep last */ }
         });
     };
-    fetch();
-    timer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 900, () => { fetch(); return GLib.SOURCE_CONTINUE; });
+
+    const fetchGdelt = () => {
+        const q = encodeURIComponent(`sourcecountry:${g.cc} sourcelang:${g.lang}`);
+        const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${q}` +
+            '&mode=artlist&maxrecords=30&sort=datedesc&format=json';
+        let msg;
+        try { msg = Soup.Message.new('GET', url); } catch (_e) { return; }
+        try { msg.request_headers.append('User-Agent', 'Mozilla/5.0'); } catch (_e) { /* ok */ }
+        session.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null, (s, res) => {
+            let arts = [];
+            try {
+                const bytes = session.send_and_read_finish(res);
+                const data = JSON.parse(new TextDecoder().decode(bytes.get_data()));
+                arts = Array.isArray(data.articles) ? data.articles : [];
+            } catch (_e) {
+                arts = [];
+            }
+            const mapped = arts.map(a => ({
+                title: (a.title || '').trim(),
+                link: a.url || '',
+                source: a.domain || '',
+                date: a.seendate || '',
+                img: a.socialimage || '',
+                gdelt: true,
+            })).filter(x => x.title && x.link);
+            if (mapped.length)
+                commit(mapped);
+            else
+                fetchGoogle();   // fall back to text headlines
+        });
+    };
+
+    fetchGdelt();
+    timer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 900, () => { fetchGdelt(); return GLib.SOURCE_CONTINUE; });
 
     return {
         actor: container,
         destroy() {
             if (timer) { GLib.source_remove(timer); timer = 0; }
             try { session.abort(); } catch (_e) { /* ok */ }
+            try { imgSession.abort(); } catch (_e) { /* ok */ }
         },
     };
 }
