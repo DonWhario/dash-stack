@@ -2244,9 +2244,12 @@ function makeChatGrid(spec, _, hooks) {
         const bubble = new St.BoxLayout({
             style_class: `dock-chat-bubble ${role === 'user' ? 'user' : 'ai'}`,
             vertical: true,
+            x_expand: true,
+            x_align: role === 'user' ? Clutter.ActorAlign.END : Clutter.ActorAlign.START,
         });
         const l = new St.Label({style_class: 'dock-chat-text', text});
         l.clutter_text.set_line_wrap(true);
+        l.clutter_text.set_ellipsize(0 /* NONE: show the whole answer, wrapped */);
         try { l.clutter_text.set_selectable(true); } catch (_e) { /* ok */ }
         bubble.add_child(l);
         msgs.add_child(bubble);

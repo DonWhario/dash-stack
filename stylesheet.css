@@ -1028,18 +1028,16 @@
 
 .dock-chat-head {
     spacing: 8px;
-    color: #ffffff;
 }
 
 .dock-chat-title {
-    color: #ffffff;
     font-weight: bold;
     font-size: 12pt;
 }
 
 .dock-chat-scroll {
-    max-height: 420px;
-    min-height: 220px;
+    max-height: 520px;
+    min-height: 200px;
 }
 
 .dock-chat-msgs {
@@ -1050,19 +1048,43 @@
 .dock-chat-bubble {
     border-radius: 12px;
     padding: 8px 10px;
+    max-width: 230px;   /* forces wrapping so the whole answer shows */
 }
 
 .dock-chat-bubble.user {
-    background-color: rgba(76, 154, 255, 0.85);
+    background-color: rgba(76, 154, 255, 0.95);
 }
 
 .dock-chat-bubble.ai {
-    background-color: rgba(255, 255, 255, 0.10);
+    background-color: rgba(255, 255, 255, 0.12);
 }
 
 .dock-chat-text {
-    color: #ffffff;
     font-size: 10.5pt;
+}
+
+/* ---- Font color by grid theme: white on dark, black on light ---- */
+.dock-chat-title,
+.dock-chat-text,
+.dock-chat-head {
+    color: #ffffff;
+}
+
+.dock-appgrid-container.light .dock-chat-title,
+.dock-appgrid-container.light .dock-chat-text,
+.dock-appgrid-container.light .dock-chat-head {
+    color: #121212;
+}
+
+/* AI bubble must stay visible on a light sidebar. */
+.dock-appgrid-container.light .dock-chat-bubble.ai {
+    background-color: rgba(0, 0, 0, 0.07);
+}
+
+/* The user bubble is always blue, so keep its text white in both themes. */
+.dock-chat-bubble.user .dock-chat-text,
+.dock-appgrid-container.light .dock-chat-bubble.user .dock-chat-text {
+    color: #ffffff;
 }
 
 .dock-chat-input {
@@ -1072,6 +1094,13 @@
 .dock-chat-entry {
     border-radius: 18px;
     padding: 8px 12px;
+    background-color: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+}
+
+.dock-appgrid-container.light .dock-chat-entry {
+    background-color: rgba(0, 0, 0, 0.06);
+    color: #121212;
 }
 
 .dock-chat-send {
