@@ -2189,7 +2189,7 @@ function chatSend(session, provider, key, model, history, cb, baseUrl) {
 }
 
 function makeChatGrid(spec, _, hooks) {
-    const provider = spec.provider || 'claude';
+    const provider = spec.provider || 'local';
     const model = (spec.model && spec.model.trim()) || chatDefaultModel(provider);
     const isLocal = provider === 'local';
     const key = (!isLocal && hooks && hooks.getChatKey) ? (hooks.getChatKey(provider) || '') : '';

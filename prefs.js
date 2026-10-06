@@ -964,7 +964,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             const provModel = new Gtk.StringList();
             ['Claude', 'ChatGPT', 'Gemini', 'Local (LM-Studio/Ollama)'].forEach(l => provModel.append(l));
             const provCodes = ['claude', 'openai', 'gemini', 'local'];
-            let psel = provCodes.indexOf(w.provider || 'claude');
+            let psel = provCodes.indexOf(w.provider || 'local');
             if (psel < 0)
                 psel = 0;
             const provRow = new Adw.ComboRow({title: _('Proveedor'), model: provModel, selected: psel});
@@ -1041,7 +1041,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         else if (type === 'photos')
             Object.assign(w, {folder: '', interval: 8});
         else if (type === 'chat')
-            w.provider = 'claude';
+            w.provider = 'local';
         widgets.push(w);
         writeWidgets(this._settings, widgets);
         this._refreshWidgetList();
