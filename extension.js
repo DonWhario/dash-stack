@@ -219,7 +219,8 @@ export default class DockStacksExtension extends Extension {
         this._appGridClosing = false;
         this._appGridPanel = null;
         this._appGridBg = null;
-        this._gridWidgetInstances = [];   // live widgets shown inside the app grid
+        this._gridWidgetInstances = [];   // live widgets in the grid (Favoritos)
+        this._sidebarWidgetInstances = []; // live widgets in the grid sidebar (chat)
         this._panelIslandActive = false;
 
         this._startupCompleteId = 0;
@@ -1534,13 +1535,13 @@ export default class DockStacksExtension extends Extension {
     }
 
     // Renders the GRID-placed widgets at the END of the app grid, shown in the
-    // "Todas las aplicaciones" category, each in its rich format (weather = 5-day,
+    // "Favoritos" category, each in its rich format (weather = 5-day,
     // clock = month + time, news = feed, music = full player, photos = big
     // Polaroid). LIVE instances created on open and torn down by
     // _destroyGridWidgets() so their timers/D-Bus don't leak.
     _appendGridWidgets(box) {
         const widgets = safeParseWidgets(this._settings.get_string('widgets'))
-            .filter(w => widgetPlace(w) === 'grid');
+            .filter(w => widgetPlace(w) === 'grid' && w.type !== 'chat');
         if (!widgets.length)
             return;
         const iconSize = this._settings.get_int('icon-size');
@@ -1598,9 +1599,27 @@ export default class DockStacksExtension extends Extension {
         this._gridWidgetInstances = [];
     }
 
+    // Stops the sidebar widgets (the AI chat). Called on grid close, since the
+    // sidebar is built once per open (not rebuilt on category change).
+    _destroySidebarWidgets() {
+        if (this._sidebarWidgetInstances) {
+            for (const w of this._sidebarWidgetInstances) {
+                try {
+                    if (w && w.destroy)
+                        w.destroy();
+                } catch (e) {
+                    logError(e, 'Dock Stack: destroy widget de barra lateral');
+                }
+            }
+        }
+        this._sidebarWidgetInstances = [];
+    }
+
     // -------------------------------------------- custom apps grid
     _openAppGrid(srcBtn) {
         this._closeAppGrid();
+        this._destroySidebarWidgets();   // clear any lingering sidebar widget
+        this._closeStack();
         this._closeStack();
         this._hideTooltip();
         this._appGridSrcBtn = srcBtn || this._appsButtonActor || null;
@@ -1753,8 +1772,31 @@ export default class DockStacksExtension extends Extension {
             sidebarInner.add_child(catBtn);
         }
 
-        // Spacer that pushes the settings button to the bottom
-        sidebarInner.add_child(new St.Widget({y_expand: true}));
+        // AI chat widget in the sidebar, above the Settings button. It fills the
+        // gap between the categories and Settings. If there's no chat widget, a
+        // plain spacer keeps Settings pinned to the bottom.
+        const chatSpec = safeParseWidgets(this._settings.get_string('widgets'))
+            .find(w => w && w.type === 'chat' && widgetPlace(w) === 'grid');
+        let chatInst = null;
+        if (chatSpec) {
+            try {
+                chatInst = makeWidget(chatSpec, iconSize, _, resolveLanguage(this._settings),
+                    this._widgetHooks(), 'grid');
+            } catch (e) {
+                logError(e, 'Dock Stack: chat en barra lateral');
+                chatInst = null;
+            }
+        }
+        if (chatInst) {
+            chatInst.actor.set_width(sidebarW - 16);
+            chatInst.actor.y_expand = true;
+            chatInst.actor.y_align = Clutter.ActorAlign.FILL;
+            sidebarInner.add_child(chatInst.actor);
+            this._sidebarWidgetInstances.push(chatInst);
+        } else {
+            // Spacer that pushes the settings button to the bottom
+            sidebarInner.add_child(new St.Widget({y_expand: true}));
+        }
 
         // Settings button (opens preferences) with a custom icon
         const cfgBtn = new St.Button({
@@ -1989,9 +2031,10 @@ export default class DockStacksExtension extends Extension {
             box.add_child(empty);
         }
 
-        // Dock widgets at the END of the grid, in "Todas las aplicaciones" and
-        // when not searching (they are not search results).
-        if (cat === 'all' && !q)
+        // Dock widgets at the END of the grid, in "Favoritos" and when not
+        // searching (they are not search results). The chat widget is NOT here;
+        // it lives in the sidebar, above the Settings button.
+        if (cat === 'favorites' && !q)
             this._appendGridWidgets(box);
     }
 
@@ -2081,6 +2124,7 @@ export default class DockStacksExtension extends Extension {
         const bg = this._appGridBg;
         const finish = () => {
             this._destroyGridWidgets();   // stop widget timers/D-Bus before teardown
+            this._destroySidebarWidgets();
             try {
                 overlay.destroy();
             } catch (_e) { /* already destroyed */ }
