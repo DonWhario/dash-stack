@@ -766,6 +766,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             ['clock', _('Añadir: Reloj'), _('Hora y fecha'), 'preferences-system-time-symbolic'],
             ['news', _('Añadir: Noticias'), _('Titulares por país (Google News)'), 'application-rss+xml-symbolic'],
             ['photos', _('Añadir: Fotos'), _('Pase de fotos del sistema en formato Polaroid'), 'image-x-generic-symbolic'],
+            ['chat', _('Añadir: Chat IA'), _('Conversar con Gemini, ChatGPT o Claude (requiere clave API)'), 'user-available-symbolic'],
             ['script', _('Añadir: Script'), _('Muestra la salida de un comando tuyo'), 'utilities-terminal-symbolic'],
         ];
         let shown = 0;
@@ -794,6 +795,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         case 'clock': return _('Reloj');
         case 'news': return _('Noticias');
         case 'photos': return _('Fotos');
+        case 'chat': return _('Chat IA');
         case 'script': return _('Script');
         default: return _('Widget');
         }
@@ -950,13 +952,43 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             exp.add_row(new Adw.ActionRow({
                 subtitle: _('Muestra las fotos de la carpeta (y subcarpetas) como Polaroid. Un clic abre una vista grande con anterior/siguiente y botón para abrir en el visor.'),
             }));
+        } else if (w.type === 'chat') {
+            const provModel = new Gtk.StringList();
+            ['Claude', 'ChatGPT', 'Gemini'].forEach(l => provModel.append(l));
+            const provCodes = ['claude', 'openai', 'gemini'];
+            let psel = provCodes.indexOf(w.provider || 'claude');
+            if (psel < 0)
+                psel = 0;
+            const provRow = new Adw.ComboRow({title: _('Proveedor'), model: provModel, selected: psel});
+            provRow.connect('notify::selected', () =>
+                this._updateWidget(w.id, {provider: provCodes[provRow.get_selected()] || 'claude'}));
+            exp.add_row(provRow);
+
+            const modelRow = new Adw.EntryRow({title: _('Modelo (opcional, usa uno por defecto)')});
+            modelRow.set_text(w.model || '');
+            modelRow.connect('apply', () => this._updateWidget(w.id, {model: modelRow.get_text().trim()}));
+            exp.add_row(modelRow);
+
+            const keyClaude = new Adw.PasswordEntryRow({title: _('Clave API de Claude (Anthropic)')});
+            this._settings.bind('chat-api-key-claude', keyClaude, 'text', Gio.SettingsBindFlags.DEFAULT);
+            exp.add_row(keyClaude);
+            const keyOpenai = new Adw.PasswordEntryRow({title: _('Clave API de ChatGPT (OpenAI)')});
+            this._settings.bind('chat-api-key-openai', keyOpenai, 'text', Gio.SettingsBindFlags.DEFAULT);
+            exp.add_row(keyOpenai);
+            const keyGemini = new Adw.PasswordEntryRow({title: _('Clave API de Gemini (Google)')});
+            this._settings.bind('chat-api-key-gemini', keyGemini, 'text', Gio.SettingsBindFlags.DEFAULT);
+            exp.add_row(keyGemini);
+
+            exp.add_row(new Adw.ActionRow({
+                subtitle: _('Las claves se guardan localmente (GSettings) y solo se envían al servicio elegido. El chat aparece en la grilla de menú (Favoritos).'),
+            }));
         } else {
             exp.add_row(new Adw.ActionRow({subtitle: _('Sin ajustes. Controla el reproductor activo.')}));
         }
 
         // Where the widget is shown. Music/news/photos are grid-only; weather,
         // system and clock can choose dock or the menu grid.
-        const GRID_ONLY = ['mpris', 'news', 'photos'];
+        const GRID_ONLY = ['mpris', 'news', 'photos', 'chat'];
         if (GRID_ONLY.includes(w.type)) {
             exp.add_row(new Adw.ActionRow({
                 subtitle: _('Este widget solo se muestra en la grilla de menú (en Favoritos, al final).'),
@@ -993,6 +1025,8 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             w.country = 'CL';
         else if (type === 'photos')
             Object.assign(w, {folder: '', interval: 8});
+        else if (type === 'chat')
+            w.provider = 'claude';
         widgets.push(w);
         writeWidgets(this._settings, widgets);
         this._refreshWidgetList();

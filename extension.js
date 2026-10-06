@@ -45,7 +45,7 @@ const safeParseWidgets = safeParseStacks;
 function widgetPlace(w) {
     if (!w)
         return 'dock';
-    if (w.type === 'mpris' || w.type === 'news' || w.type === 'photos')
+    if (w.type === 'mpris' || w.type === 'news' || w.type === 'photos' || w.type === 'chat')
         return 'grid';
     return w.place === 'grid' ? 'grid' : 'dock';
 }
@@ -1461,6 +1461,14 @@ export default class DockStacksExtension extends Extension {
                     {}, this._weatherCache[id] || {}, patch);
                 this._saveWeatherCache();
             },
+            // API key for the AI chat widget (per provider), read from GSettings.
+            getChatKey: (provider) => {
+                try {
+                    return this._settings.get_string(`chat-api-key-${provider}`);
+                } catch (_e) {
+                    return '';
+                }
+            },
         };
     }
 
@@ -1484,7 +1492,7 @@ export default class DockStacksExtension extends Extension {
 
         // Rich cards are wide; wrap them into rows by their estimated width.
         const estWidth = (type) => ({
-            weather: 320, clock: 320, news: 460, mpris: 320, photos: 290,
+            weather: 320, clock: 320, news: 460, mpris: 320, photos: 290, chat: 400,
         }[type] || 240);
 
         let row = null;

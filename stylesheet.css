@@ -1018,3 +1018,69 @@
 .dock-widget.vivid {
     border: 1px solid rgba(255, 255, 255, 0.22);
 }
+
+/* --------------------------------------------------------------------------
+ * Chat IA (grilla): cabecera, mensajes (burbujas) y entrada de texto.
+ * -------------------------------------------------------------------------- */
+.dock-chat {
+    spacing: 8px;
+}
+
+.dock-chat-head {
+    spacing: 8px;
+    color: #ffffff;
+}
+
+.dock-chat-title {
+    color: #ffffff;
+    font-weight: bold;
+    font-size: 12pt;
+}
+
+.dock-chat-scroll {
+    max-height: 420px;
+    min-height: 220px;
+}
+
+.dock-chat-msgs {
+    spacing: 8px;
+    padding: 4px 2px;
+}
+
+.dock-chat-bubble {
+    border-radius: 12px;
+    padding: 8px 10px;
+}
+
+.dock-chat-bubble.user {
+    background-color: rgba(76, 154, 255, 0.85);
+}
+
+.dock-chat-bubble.ai {
+    background-color: rgba(255, 255, 255, 0.10);
+}
+
+.dock-chat-text {
+    color: #ffffff;
+    font-size: 10.5pt;
+}
+
+.dock-chat-input {
+    spacing: 8px;
+}
+
+.dock-chat-entry {
+    border-radius: 18px;
+    padding: 8px 12px;
+}
+
+.dock-chat-send {
+    color: #ffffff;
+    padding: 8px;
+    border-radius: 18px;
+    background-color: rgba(76, 154, 255, 0.85);
+}
+
+.dock-chat-send:hover {
+    background-color: rgba(76, 154, 255, 1.0);
+}

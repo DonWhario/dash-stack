@@ -93,6 +93,7 @@ export function makeWidget(spec, iconSize, _, lang, hooks, mode) {
     case 'script': return makeScript(spec, iconSize, _);
     case 'news': return makeNews(spec, iconSize, _, lang, hooks);
     case 'photos': return makePhotos(spec, iconSize, _);
+    case 'chat': return makePlaceholder(_);   // chat is grid-only
     default: return makePlaceholder(_);
     }
 }
@@ -105,6 +106,7 @@ function makeWidgetGrid(spec, iconSize, _, lang, hooks) {
     case 'news': return makeNewsGrid(spec, _, hooks);
     case 'mpris': return makeMprisGrid(spec, _);
     case 'photos': return makePhotos(spec, iconSize, _, true);
+    case 'chat': return makeChatGrid(spec, _, hooks);
     case 'system': return makeSystem(spec, iconSize, _);
     case 'script': return makeScript(spec, iconSize, _);
     default: return makePlaceholder(_);
@@ -2094,5 +2096,184 @@ function makeMprisGrid(spec, _) {
     return {
         actor: container,
         destroy() { if (timer) GLib.source_remove(timer); },
+    };
+}
+
+// ------------------------------------------------------------- Grid: AI chat
+// Integrated chat with Gemini / ChatGPT / Claude over each provider's API.
+// The user's API key is read from GSettings (via hooks.getChatKey) and is sent
+// ONLY to that provider's official endpoint.
+function chatProviderName(p) {
+    return {claude: 'Claude', openai: 'ChatGPT', gemini: 'Gemini'}[p] || 'IA';
+}
+
+function chatDefaultModel(p) {
+    return {
+        claude: 'claude-haiku-4-5-20251001',
+        openai: 'gpt-4o-mini',
+        gemini: 'gemini-1.5-flash',
+    }[p] || '';
+}
+
+// Sends the conversation `history` ([{role:'user'|'assistant', content}]) to the
+// provider and calls cb(text, errorString).
+function chatSend(session, provider, key, model, history, cb) {
+    let url;
+    const headers = {};
+    let body;
+    if (provider === 'openai') {
+        url = 'https://api.openai.com/v1/chat/completions';
+        headers['Authorization'] = `Bearer ${key}`;
+        body = {model, messages: history.map(m => ({role: m.role, content: m.content}))};
+    } else if (provider === 'gemini') {
+        url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
+        body = {contents: history.map(m => ({
+            role: m.role === 'assistant' ? 'model' : 'user',
+            parts: [{text: m.content}],
+        }))};
+    } else { // claude (default)
+        url = 'https://api.anthropic.com/v1/messages';
+        headers['x-api-key'] = key;
+        headers['anthropic-version'] = '2023-06-01';
+        body = {model, max_tokens: 1024, messages: history.map(m => ({role: m.role, content: m.content}))};
+    }
+
+    let msg;
+    try { msg = Soup.Message.new('POST', url); } catch (_e) { cb(null, 'URL inválida'); return; }
+    for (const h in headers) {
+        try { msg.request_headers.append(h, headers[h]); } catch (_e) { /* ok */ }
+    }
+    try {
+        const bytes = new GLib.Bytes(new TextEncoder().encode(JSON.stringify(body)));
+        msg.set_request_body_from_bytes('application/json', bytes);
+    } catch (e) {
+        cb(null, 'No se pudo preparar la solicitud');
+        return;
+    }
+    session.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null, (s, res) => {
+        try {
+            const resp = session.send_and_read_finish(res);
+            const txt = new TextDecoder().decode(resp.get_data());
+            const data = JSON.parse(txt);
+            let out = '';
+            if (provider === 'openai')
+                out = data.choices && data.choices[0] ? (data.choices[0].message.content || '') : '';
+            else if (provider === 'gemini')
+                out = data.candidates && data.candidates[0]
+                    ? data.candidates[0].content.parts.map(p => p.text || '').join('') : '';
+            else
+                out = Array.isArray(data.content) ? data.content.map(c => c.text || '').join('') : '';
+            if (out && out.trim())
+                cb(out.trim(), null);
+            else {
+                const err = (data.error && (data.error.message || data.error.type || data.error)) ||
+                    data['error'] || 'Respuesta vacía o error del servicio';
+                cb(null, String(err));
+            }
+        } catch (_e) {
+            cb(null, 'Error de red o de respuesta');
+        }
+    });
+}
+
+function makeChatGrid(spec, _, hooks) {
+    const provider = spec.provider || 'claude';
+    const model = (spec.model && spec.model.trim()) || chatDefaultModel(provider);
+    const key = (hooks && hooks.getChatKey) ? (hooks.getChatKey(provider) || '') : '';
+
+    const container = new St.BoxLayout({style_class: 'dock-chat', vertical: true});
+    container.set_width(380);
+
+    const header = new St.BoxLayout({style_class: 'dock-chat-head'});
+    header.add_child(new St.Icon({icon_name: 'user-available-symbolic', icon_size: 16}));
+    header.add_child(new St.Label({
+        style_class: 'dock-chat-title', text: chatProviderName(provider),
+        x_expand: true, y_align: CENTER,
+    }));
+    container.add_child(header);
+
+    const scroll = new St.ScrollView({style_class: 'dock-chat-scroll', y_expand: true});
+    scroll.set_policy(St.PolicyType.NEVER, St.PolicyType.AUTOMATIC);
+    const msgs = new St.BoxLayout({style_class: 'dock-chat-msgs', vertical: true});
+    scroll.set_child(msgs);
+    container.add_child(scroll);
+
+    const inputRow = new St.BoxLayout({style_class: 'dock-chat-input'});
+    const entry = new St.Entry({
+        style_class: 'dock-chat-entry', can_focus: true, x_expand: true,
+    });
+    entry.set_hint_text(_('Escribe un mensaje…'));
+    const sendBtn = new St.Button({
+        style_class: 'dock-chat-send',
+        child: new St.Icon({icon_name: 'mail-send-symbolic', icon_size: 18}),
+    });
+    inputRow.add_child(entry);
+    inputRow.add_child(sendBtn);
+    container.add_child(inputRow);
+
+    const history = [];
+    const session = new Soup.Session();
+
+    const scrollToBottom = () => {
+        const adj = scroll.vadjustment ||
+            (scroll.get_vadjustment ? scroll.get_vadjustment() : null);
+        if (adj) {
+            GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+                adj.value = Math.max(0, adj.upper - adj.page_size);
+                return GLib.SOURCE_REMOVE;
+            });
+        }
+    };
+    const addBubble = (role, text) => {
+        const bubble = new St.BoxLayout({
+            style_class: `dock-chat-bubble ${role === 'user' ? 'user' : 'ai'}`,
+            vertical: true,
+        });
+        const l = new St.Label({style_class: 'dock-chat-text', text});
+        l.clutter_text.set_line_wrap(true);
+        try { l.clutter_text.set_selectable(true); } catch (_e) { /* ok */ }
+        bubble.add_child(l);
+        msgs.add_child(bubble);
+        scrollToBottom();
+        return l;
+    };
+
+    if (!key)
+        addBubble('ai', _('Configura tu clave API en Preferencias → Widgets para usar el chat.'));
+    else
+        addBubble('ai', _('Hola, ¿en qué te ayudo?'));
+
+    let busy = false;
+    const send = () => {
+        const text = entry.get_text().trim();
+        if (!text || busy)
+            return;
+        if (!key) {
+            addBubble('ai', _('Falta la clave API. Añádela en Preferencias → Widgets.'));
+            return;
+        }
+        entry.set_text('');
+        addBubble('user', text);
+        history.push({role: 'user', content: text});
+        busy = true;
+        const pending = addBubble('ai', '…');
+        chatSend(session, provider, key, model, history, (out, err) => {
+            busy = false;
+            if (out) {
+                pending.text = out;
+                history.push({role: 'assistant', content: out});
+            } else {
+                pending.text = `⚠ ${err || _('Error')}`;
+            }
+            scrollToBottom();
+        });
+    };
+    sendBtn.connect('clicked', send);
+    entry.clutter_text.connect('activate', send);
+    entry.connect('button-press-event', () => { entry.grab_key_focus(); return Clutter.EVENT_PROPAGATE; });
+
+    return {
+        actor: container,
+        destroy() { try { session.abort(); } catch (_e) { /* ok */ } },
     };
 }
