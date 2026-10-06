@@ -54,10 +54,54 @@ function iconForGicon(gicon, size) {
     return new St.Icon({gicon, icon_size: size});
 }
 
-// "Shiver" (trembling) animation of dock icons on hover. Toggled by the
-// 'hover-shake' setting; read live so the switch applies without a rebuild.
+// "Shiver" (trembling) animation on hover. Toggled by the 'hover-shake'
+// setting; read live so the switch applies without a rebuild. Shared by the
+// dock icons and the app-grid cells.
 let hoverShake = false;
 function setHoverShake(b) { hoverShake = !!b; }
+
+function startShiver(actor) {
+    if (actor._shiverTimer)
+        return;
+    actor.set_pivot_point(0.5, 0.5);
+    const amps = [-7, 6, -5, 7, -6, 5];
+    let i = 0;
+    const step = () => {
+        actor.ease({
+            rotation_angle_z: amps[i % amps.length],
+            duration: 70,
+            mode: Clutter.AnimationMode.EASE_OUT_SINE,
+        });
+        i++;
+        return GLib.SOURCE_CONTINUE;
+    };
+    step();
+    actor._shiverTimer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 75, step);
+}
+
+function stopShiver(actor) {
+    if (actor._shiverTimer) {
+        GLib.source_remove(actor._shiverTimer);
+        actor._shiverTimer = 0;
+    }
+    actor.ease({rotation_angle_z: 0, duration: 90, mode: Clutter.AnimationMode.EASE_OUT_QUAD});
+}
+
+// Wires the hover-shake on any reactive, hover-tracking actor (St.Button).
+function attachHoverShake(actor) {
+    actor.connect('notify::hover', () => {
+        if (hoverShake && actor.hover)
+            startShiver(actor);
+        else
+            stopShiver(actor);
+    });
+    actor.connect('destroy', () => {
+        if (actor._shiverTimer) {
+            GLib.source_remove(actor._shiverTimer);
+            actor._shiverTimer = 0;
+        }
+    });
+}
 
 // ------------------------------------------------------------- DockItemButton
 const DockItemButton = GObject.registerClass(
@@ -72,19 +116,7 @@ class DockItemButton extends St.Button {
             y_align: Clutter.ActorAlign.CENTER,
         });
         this._iconSize = iconSize;
-        // Trembling animation while hovered.
-        this.connect('notify::hover', () => {
-            if (hoverShake && this.hover)
-                this._startShiver();
-            else
-                this._stopShiver();
-        });
-        this.connect('destroy', () => {
-            if (this._shiverTimer) {
-                GLib.source_remove(this._shiverTimer);
-                this._shiverTimer = 0;
-            }
-        });
+        attachHoverShake(this);   // trembling animation while hovered
         this._box = new St.BoxLayout({orientation: Clutter.Orientation.VERTICAL, x_align: Clutter.ActorAlign.CENTER});
         if (iconActor)
             this._box.add_child(iconActor);
@@ -98,34 +130,6 @@ class DockItemButton extends St.Button {
         if (label)
             this.set_tooltip_text?.(label); // no-op if missing; we use our own hover
         this._labelText = label;
-    }
-
-    _startShiver() {
-        if (this._shiverTimer)
-            return; // already trembling
-        this.set_pivot_point(0.5, 0.5);
-        const amps = [-7, 6, -5, 7, -6, 5];
-        let i = 0;
-        const step = () => {
-            const a = amps[i % amps.length];
-            i++;
-            this.ease({
-                rotation_angle_z: a,
-                duration: 70,
-                mode: Clutter.AnimationMode.EASE_OUT_SINE,
-            });
-            return GLib.SOURCE_CONTINUE;
-        };
-        step();
-        this._shiverTimer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 75, step);
-    }
-
-    _stopShiver() {
-        if (this._shiverTimer) {
-            GLib.source_remove(this._shiverTimer);
-            this._shiverTimer = 0;
-        }
-        this.ease({rotation_angle_z: 0, duration: 90, mode: Clutter.AnimationMode.EASE_OUT_QUAD});
     }
 
     setRunning(windowCount, focused) {
@@ -1942,7 +1946,10 @@ export default class DockStacksExtension extends Extension {
                 row = new St.BoxLayout({style_class: 'dock-appgrid-row'});
                 box.add_child(row);
             }
-            const cell = new St.Button({style_class: 'dock-appgrid-cell', can_focus: true});
+            const cell = new St.Button({
+                style_class: 'dock-appgrid-cell', can_focus: true, track_hover: true,
+            });
+            attachHoverShake(cell);   // trembling on hover, like the dock icons
             const vb = new St.BoxLayout({
                 orientation: Clutter.Orientation.VERTICAL,
                 x_align: Clutter.ActorAlign.CENTER,
