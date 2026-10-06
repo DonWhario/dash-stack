@@ -54,6 +54,11 @@ function iconForGicon(gicon, size) {
     return new St.Icon({gicon, icon_size: size});
 }
 
+// "Shiver" (trembling) animation of dock icons on hover. Toggled by the
+// 'hover-shake' setting; read live so the switch applies without a rebuild.
+let hoverShake = false;
+function setHoverShake(b) { hoverShake = !!b; }
+
 // ------------------------------------------------------------- DockItemButton
 const DockItemButton = GObject.registerClass(
 class DockItemButton extends St.Button {
@@ -67,6 +72,19 @@ class DockItemButton extends St.Button {
             y_align: Clutter.ActorAlign.CENTER,
         });
         this._iconSize = iconSize;
+        // Trembling animation while hovered.
+        this.connect('notify::hover', () => {
+            if (hoverShake && this.hover)
+                this._startShiver();
+            else
+                this._stopShiver();
+        });
+        this.connect('destroy', () => {
+            if (this._shiverTimer) {
+                GLib.source_remove(this._shiverTimer);
+                this._shiverTimer = 0;
+            }
+        });
         this._box = new St.BoxLayout({orientation: Clutter.Orientation.VERTICAL, x_align: Clutter.ActorAlign.CENTER});
         if (iconActor)
             this._box.add_child(iconActor);
@@ -80,6 +98,34 @@ class DockItemButton extends St.Button {
         if (label)
             this.set_tooltip_text?.(label); // no-op if missing; we use our own hover
         this._labelText = label;
+    }
+
+    _startShiver() {
+        if (this._shiverTimer)
+            return; // already trembling
+        this.set_pivot_point(0.5, 0.5);
+        const amps = [-7, 6, -5, 7, -6, 5];
+        let i = 0;
+        const step = () => {
+            const a = amps[i % amps.length];
+            i++;
+            this.ease({
+                rotation_angle_z: a,
+                duration: 70,
+                mode: Clutter.AnimationMode.EASE_OUT_SINE,
+            });
+            return GLib.SOURCE_CONTINUE;
+        };
+        step();
+        this._shiverTimer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 75, step);
+    }
+
+    _stopShiver() {
+        if (this._shiverTimer) {
+            GLib.source_remove(this._shiverTimer);
+            this._shiverTimer = 0;
+        }
+        this.ease({rotation_angle_z: 0, duration: 90, mode: Clutter.AnimationMode.EASE_OUT_QUAD});
     }
 
     setRunning(windowCount, focused) {
@@ -153,6 +199,7 @@ export default class DockStacksExtension extends Extension {
         _ = makeTranslator(this._settings);
         setDockOpacity(this._settings.get_int('background-opacity') / 100);
         setVividWidgets(this._settings.get_boolean('vivid-widgets'));
+        setHoverShake(this._settings.get_boolean('hover-shake'));
         this._stackOverlay = null;
         this._stackPopup = null;
         this._stackGrab = null;
@@ -222,6 +269,8 @@ export default class DockStacksExtension extends Extension {
                 setVividWidgets(this._settings.get_boolean('vivid-widgets'));
                 this._rebuildItems();
             }
+            else if (key === 'hover-shake')
+                setHoverShake(this._settings.get_boolean('hover-shake'));
             else if (key === 'panel-island')
                 this._applyPanelIsland();
         });

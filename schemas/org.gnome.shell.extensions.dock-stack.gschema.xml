@@ -94,6 +94,11 @@
       <summary>Colores vivos en los widgets del dock: usar fondos con gradientes brillantes y llamativos (clima, sistema y reloj) en vez de las imágenes</summary>
     </key>
 
+    <key name="hover-shake" type="b">
+      <default>true</default>
+      <summary>Animar los iconos del dock (temblor) cuando el puntero pasa por encima</summary>
+    </key>
+
     <key name="chat-api-key-claude" type="s">
       <default>""</default>
       <summary>Clave API de Anthropic (Claude) para el widget de chat IA</summary>

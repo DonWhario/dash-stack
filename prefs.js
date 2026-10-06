@@ -268,6 +268,14 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         settings.bind('panel-island', islandRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         group.add(islandRow);
 
+        // Hover shake (trembling icons)
+        const shakeRow = new Adw.SwitchRow({
+            title: _('Temblor al pasar el ratón'),
+            subtitle: _('Los iconos del dock tiemblan ligeramente cuando el puntero pasa sobre ellos'),
+        });
+        settings.bind('hover-shake', shakeRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+        group.add(shakeRow);
+
         // No overview at startup
         const noOvRow = new Adw.SwitchRow({
             title: _('No abrir Actividades al iniciar sesión'),
