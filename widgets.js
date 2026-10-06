@@ -2112,7 +2112,7 @@ function chatDefaultModel(p) {
         claude: 'claude-haiku-4-5-20251001',
         openai: 'gpt-4o-mini',
         gemini: 'gemini-1.5-flash',
-        local: 'qwen2.5:7b',   // Ollama id; LM-Studio would be qwen2.5-7b-instruct
+        local: 'qwen2.5:3b',   // Ollama id; LM-Studio would be qwen2.5-3b-instruct
     }[p] || '';
 }
 
