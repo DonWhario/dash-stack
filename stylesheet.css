@@ -1045,18 +1045,32 @@
     padding: 4px 2px;
 }
 
+/* iMessage-style time stamp */
+.dock-chat-ts {
+    color: #8a8a8e;
+    font-size: 8pt;
+    font-weight: bold;
+    padding: 2px 0 8px 0;
+}
+
+/* iMessage-style bubbles: rounded with a small "tail" corner. */
 .dock-chat-bubble {
-    border-radius: 12px;
-    padding: 8px 10px;
+    padding: 8px 13px;
     max-width: 230px;   /* forces wrapping so the whole answer shows */
 }
 
 .dock-chat-bubble.user {
-    background-color: rgba(76, 154, 255, 0.95);
+    background-color: #0b93f6;                 /* iMessage blue */
+    border-radius: 18px 18px 5px 18px;         /* tail bottom-right */
 }
 
 .dock-chat-bubble.ai {
-    background-color: rgba(255, 255, 255, 0.12);
+    background-color: #3b3b3d;                  /* iMessage gray (dark) */
+    border-radius: 18px 18px 18px 5px;         /* tail bottom-left */
+}
+
+.dock-appgrid-container.light .dock-chat-bubble.ai {
+    background-color: #e9e9eb;                  /* iMessage gray (light) */
 }
 
 .dock-chat-text {
@@ -1073,12 +1087,7 @@
 .dock-appgrid-container.light .dock-chat-title,
 .dock-appgrid-container.light .dock-chat-text,
 .dock-appgrid-container.light .dock-chat-head {
-    color: #121212;
-}
-
-/* AI bubble must stay visible on a light sidebar. */
-.dock-appgrid-container.light .dock-chat-bubble.ai {
-    background-color: rgba(0, 0, 0, 0.07);
+    color: #000000;
 }
 
 /* The user bubble is always blue, so keep its text white in both themes. */

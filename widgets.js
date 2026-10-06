@@ -2257,6 +2257,13 @@ function makeChatGrid(spec, _, hooks) {
         return l;
     };
 
+    // iMessage-style time stamp at the top.
+    msgs.add_child(new St.Label({
+        style_class: 'dock-chat-ts',
+        text: GLib.DateTime.new_now_local().format('%A %H:%M'),
+        x_align: CENTER,
+    }));
+
     if (!ready)
         addBubble('ai', _('Configura tu clave API en Preferencias → Widgets para usar el chat.'));
     else if (isLocal)
