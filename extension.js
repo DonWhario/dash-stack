@@ -1780,8 +1780,8 @@ export default class DockStacksExtension extends Extension {
         let chatInst = null;
         if (chatSpec) {
             try {
-                chatInst = makeWidget(chatSpec, iconSize, _, resolveLanguage(this._settings),
-                    this._widgetHooks(), 'grid');
+                chatInst = makeWidget(chatSpec, this._settings.get_int('icon-size'), _,
+                    resolveLanguage(this._settings), this._widgetHooks(), 'grid');
             } catch (e) {
                 logError(e, 'Dock Stack: chat en barra lateral');
                 chatInst = null;
