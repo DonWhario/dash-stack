@@ -115,8 +115,8 @@
     </key>
 
     <key name="chat-local-url" type="s">
-      <default>"http://localhost:1234/v1"</default>
-      <summary>URL base del servidor local compatible con OpenAI (LM-Studio: http://localhost:1234/v1; Ollama: http://localhost:11434/v1)</summary>
+      <default>"http://localhost:11434/v1"</default>
+      <summary>URL base del servidor local compatible con OpenAI (Ollama: http://localhost:11434/v1; LM-Studio: http://localhost:1234/v1)</summary>
     </key>
 
     <key name="startup-sound" type="b">
