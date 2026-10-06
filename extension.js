@@ -1522,6 +1522,14 @@ export default class DockStacksExtension extends Extension {
                     return '';
                 }
             },
+            // Base URL of the local OpenAI-compatible server (LM-Studio/Ollama).
+            getChatLocalUrl: () => {
+                try {
+                    return this._settings.get_string('chat-local-url');
+                } catch (_e) {
+                    return '';
+                }
+            },
         };
     }
 

@@ -962,8 +962,8 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             }));
         } else if (w.type === 'chat') {
             const provModel = new Gtk.StringList();
-            ['Claude', 'ChatGPT', 'Gemini'].forEach(l => provModel.append(l));
-            const provCodes = ['claude', 'openai', 'gemini'];
+            ['Claude', 'ChatGPT', 'Gemini', 'Local (LM-Studio/Ollama)'].forEach(l => provModel.append(l));
+            const provCodes = ['claude', 'openai', 'gemini', 'local'];
             let psel = provCodes.indexOf(w.provider || 'claude');
             if (psel < 0)
                 psel = 0;
@@ -972,10 +972,17 @@ export default class DockStacksPreferences extends ExtensionPreferences {
                 this._updateWidget(w.id, {provider: provCodes[provRow.get_selected()] || 'claude'}));
             exp.add_row(provRow);
 
-            const modelRow = new Adw.EntryRow({title: _('Modelo (opcional, usa uno por defecto)')});
+            const modelRow = new Adw.EntryRow({title: _('Modelo (local: el nombre del modelo cargado)')});
             modelRow.set_text(w.model || '');
             modelRow.connect('apply', () => this._updateWidget(w.id, {model: modelRow.get_text().trim()}));
             exp.add_row(modelRow);
+
+            // Local server URL (LM-Studio / Ollama).
+            const localUrl = new Adw.EntryRow({title: _('URL del servidor local')});
+            localUrl.set_text(this._settings.get_string('chat-local-url'));
+            localUrl.connect('apply', () =>
+                this._settings.set_string('chat-local-url', localUrl.get_text().trim()));
+            exp.add_row(localUrl);
 
             const keyClaude = new Adw.PasswordEntryRow({title: _('Clave API de Claude (Anthropic)')});
             this._settings.bind('chat-api-key-claude', keyClaude, 'text', Gio.SettingsBindFlags.DEFAULT);
@@ -988,7 +995,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             exp.add_row(keyGemini);
 
             exp.add_row(new Adw.ActionRow({
-                subtitle: _('Las claves se guardan localmente (GSettings) y solo se envían al servicio elegido. El chat aparece en la grilla de menú (Favoritos).'),
+                subtitle: _('Local no necesita clave: inicia el servidor en LM-Studio (o Ollama) y pon el nombre del modelo. Las claves de los servicios en la nube se guardan localmente y solo se envían a ese servicio. El chat aparece en la grilla de menú (Favoritos).'),
             }));
         } else {
             exp.add_row(new Adw.ActionRow({subtitle: _('Sin ajustes. Controla el reproductor activo.')}));

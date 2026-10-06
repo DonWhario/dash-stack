@@ -2104,7 +2104,7 @@ function makeMprisGrid(spec, _) {
 // The user's API key is read from GSettings (via hooks.getChatKey) and is sent
 // ONLY to that provider's official endpoint.
 function chatProviderName(p) {
-    return {claude: 'Claude', openai: 'ChatGPT', gemini: 'Gemini'}[p] || 'IA';
+    return {claude: 'Claude', openai: 'ChatGPT', gemini: 'Gemini', local: 'Local'}[p] || 'IA';
 }
 
 function chatDefaultModel(p) {
@@ -2112,16 +2112,28 @@ function chatDefaultModel(p) {
         claude: 'claude-haiku-4-5-20251001',
         openai: 'gpt-4o-mini',
         gemini: 'gemini-1.5-flash',
+        local: '',   // the model loaded in LM-Studio / pulled in Ollama
     }[p] || '';
 }
 
 // Sends the conversation `history` ([{role:'user'|'assistant', content}]) to the
-// provider and calls cb(text, errorString).
-function chatSend(session, provider, key, model, history, cb) {
+// provider and calls cb(text, errorString). `baseUrl` is used by the 'local'
+// provider (LM-Studio / Ollama, OpenAI-compatible).
+function chatSend(session, provider, key, model, history, cb, baseUrl) {
     let url;
     const headers = {};
     let body;
-    if (provider === 'openai') {
+    if (provider === 'local') {
+        const base = (baseUrl || 'http://localhost:1234/v1').replace(/\/+$/, '');
+        url = `${base}/chat/completions`;
+        if (key)
+            headers['Authorization'] = `Bearer ${key}`;   // optional for local
+        body = {
+            model: model || 'local-model',
+            messages: history.map(m => ({role: m.role, content: m.content})),
+            stream: false,
+        };
+    } else if (provider === 'openai') {
         url = 'https://api.openai.com/v1/chat/completions';
         headers['Authorization'] = `Bearer ${key}`;
         body = {model, messages: history.map(m => ({role: m.role, content: m.content}))};
@@ -2156,7 +2168,7 @@ function chatSend(session, provider, key, model, history, cb) {
             const txt = new TextDecoder().decode(resp.get_data());
             const data = JSON.parse(txt);
             let out = '';
-            if (provider === 'openai')
+            if (provider === 'openai' || provider === 'local')
                 out = data.choices && data.choices[0] ? (data.choices[0].message.content || '') : '';
             else if (provider === 'gemini')
                 out = data.candidates && data.candidates[0]
@@ -2179,7 +2191,11 @@ function chatSend(session, provider, key, model, history, cb) {
 function makeChatGrid(spec, _, hooks) {
     const provider = spec.provider || 'claude';
     const model = (spec.model && spec.model.trim()) || chatDefaultModel(provider);
-    const key = (hooks && hooks.getChatKey) ? (hooks.getChatKey(provider) || '') : '';
+    const isLocal = provider === 'local';
+    const key = (!isLocal && hooks && hooks.getChatKey) ? (hooks.getChatKey(provider) || '') : '';
+    const baseUrl = (isLocal && hooks && hooks.getChatLocalUrl)
+        ? (hooks.getChatLocalUrl() || 'http://localhost:1234/v1') : '';
+    const ready = isLocal || !!key;
 
     const container = new St.BoxLayout({style_class: 'dock-chat', vertical: true});
     container.set_width(380);
@@ -2238,8 +2254,10 @@ function makeChatGrid(spec, _, hooks) {
         return l;
     };
 
-    if (!key)
+    if (!ready)
         addBubble('ai', _('Configura tu clave API en Preferencias → Widgets para usar el chat.'));
+    else if (isLocal)
+        addBubble('ai', _('Modelo local listo. ¿En qué te ayudo?'));
     else
         addBubble('ai', _('Hola, ¿en qué te ayudo?'));
 
@@ -2248,7 +2266,7 @@ function makeChatGrid(spec, _, hooks) {
         const text = entry.get_text().trim();
         if (!text || busy)
             return;
-        if (!key) {
+        if (!ready) {
             addBubble('ai', _('Falta la clave API. Añádela en Preferencias → Widgets.'));
             return;
         }
@@ -2266,7 +2284,7 @@ function makeChatGrid(spec, _, hooks) {
                 pending.text = `⚠ ${err || _('Error')}`;
             }
             scrollToBottom();
-        });
+        }, baseUrl);
     };
     sendBtn.connect('clicked', send);
     entry.clutter_text.connect('activate', send);
