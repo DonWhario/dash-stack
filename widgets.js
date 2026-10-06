@@ -1876,6 +1876,7 @@ function makeNewsGrid(spec, _, hooks) {
             vb.add_child(meta);
             const h = new St.Label({style_class: 'dock-newsfeed-headline', text: it.title});
             h.clutter_text.set_line_wrap(true);
+            h.clutter_text.set_ellipsize(0 /* NONE: wrap instead of cutting */);
             vb.add_child(h);
             row.add_child(vb);
             cardBtn.set_child(row);
