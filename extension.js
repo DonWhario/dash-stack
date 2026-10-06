@@ -1533,8 +1533,8 @@ export default class DockStacksExtension extends Extension {
         };
     }
 
-    // Renders the GRID-placed widgets at the END of the app grid, shown only in
-    // the "Favoritos" category, each in its rich format (weather = 5-day,
+    // Renders the GRID-placed widgets at the END of the app grid, shown in the
+    // "Todas las aplicaciones" category, each in its rich format (weather = 5-day,
     // clock = month + time, news = feed, music = full player, photos = big
     // Polaroid). LIVE instances created on open and torn down by
     // _destroyGridWidgets() so their timers/D-Bus don't leak.
@@ -1989,9 +1989,9 @@ export default class DockStacksExtension extends Extension {
             box.add_child(empty);
         }
 
-        // Dock widgets at the END of the grid, only in "Favoritos" and when not
-        // searching (they are not search results).
-        if (cat === 'favorites' && !q)
+        // Dock widgets at the END of the grid, in "Todas las aplicaciones" and
+        // when not searching (they are not search results).
+        if (cat === 'all' && !q)
             this._appendGridWidgets(box);
     }
 
