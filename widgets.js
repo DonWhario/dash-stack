@@ -1783,10 +1783,37 @@ function gdeltAge(seendate) {
     return `${Math.floor(h / 24)} d`;
 }
 
+// Google News RSS links are redirects (…/rss/articles/CBMi<base64>…). The real
+// article URL is usually embedded as a readable string inside that base64, so we
+// decode it to (a) open the real article and (b) read its og:image. Returns ''
+// when it can't be decoded.
+function decodeGoogleNewsUrl(gurl) {
+    const m = /\/articles\/([A-Za-z0-9_-]+)/.exec(gurl || '');
+    if (!m)
+        return '';
+    try {
+        let b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
+        while (b64.length % 4)
+            b64 += '=';
+        const bytes = GLib.base64_decode(b64);
+        const s = new TextDecoder('utf-8', {fatal: false}).decode(bytes);
+        const um = /https?:\/\/[^\s"'<>\\]+/.exec(s);
+        if (!um)
+            return '';
+        let url = um[0];
+        // The embedded string may carry trailing protobuf bytes; trim junk.
+        url = url.replace(/[^\x21-\x7e]+.*$/, '').replace(/Â.*$/, '');
+        if (url.includes('news.google.com'))
+            return '';
+        return url;
+    } catch (_e) {
+        return '';
+    }
+}
+
 function makeNewsGrid(spec, _, hooks) {
     const code = (spec.country || 'CL').toUpperCase();
     const c = NEWS_COUNTRIES[code] || NEWS_COUNTRIES.CL;
-    const g = NEWS_GDELT[code] || NEWS_GDELT.CL;
 
     const container = new St.BoxLayout({style_class: 'dock-newsfeed', vertical: true});
     container.set_width(440);
@@ -1803,9 +1830,9 @@ function makeNewsGrid(spec, _, hooks) {
     const rawCache = hooks && spec.id ? hooks.getCache(spec.id) : null;
     const cache = rawCache && typeof rawCache === 'object' ? rawCache : {};
     let items = (cache.country === code && Array.isArray(cache.items)) ? cache.items : [];
-    // If the cache is recent, show it and skip the immediate GDELT call (avoids
-    // hammering/rate-limiting GDELT every time the grid is reopened).
-    const fresh = items.length && cache.ts && (Date.now() - cache.ts < 14 * 60 * 1000);
+    // Show the cache only if it's very recent; otherwise refresh on open so the
+    // headlines stay current.
+    const fresh = items.length && cache.ts && (Date.now() - cache.ts < 5 * 60 * 1000);
 
     const imgSession = new Soup.Session();
 
@@ -1834,7 +1861,8 @@ function makeNewsGrid(spec, _, hooks) {
             });
             thumb.visible = false;
             row.add_child(thumb);
-            loadNewsThumb(imgSession, it.link, it.img, thumb, 168);
+            const realUrl = it.gdelt ? it.link : (decodeGoogleNewsUrl(it.link) || it.link);
+            loadNewsThumb(imgSession, realUrl, it.img, thumb, 168);
             const vb = new St.BoxLayout({
                 vertical: true, x_expand: true, x_align: Clutter.ActorAlign.FILL,
             });
@@ -1851,9 +1879,10 @@ function makeNewsGrid(spec, _, hooks) {
             vb.add_child(h);
             row.add_child(vb);
             cardBtn.set_child(row);
+            const openUrl = realUrl || it.link;
             cardBtn.connect('clicked', () => {
-                if (it.link) {
-                    try { Gio.AppInfo.launch_default_for_uri(it.link, null); } catch (_e) { /* ok */ }
+                if (openUrl) {
+                    try { Gio.AppInfo.launch_default_for_uri(openUrl, null); } catch (_e) { /* ok */ }
                 }
             });
             list.add_child(cardBtn);
@@ -1873,7 +1902,8 @@ function makeNewsGrid(spec, _, hooks) {
             hooks.setCache(spec.id, {items, country: code, ts: Date.now()});
     };
 
-    // Fallback: Google News RSS (text only) when GDELT yields nothing.
+    // Primary source: Google News RSS (real-time, reliable). Images are resolved
+    // per card from the article's og:image (via the decoded real URL).
     const fetchGoogle = () => {
         const url = `https://news.google.com/rss?hl=${c.hl}&gl=${c.gl}&ceid=${c.gl}:${c.lang}`;
         let msg;
@@ -1884,44 +1914,14 @@ function makeNewsGrid(spec, _, hooks) {
                 const bytes = session.send_and_read_finish(res);
                 const xml = new TextDecoder().decode(bytes.get_data());
                 commit(parseRssItems(xml, 25).map(x => Object.assign({}, x, {img: '', gdelt: false})));
-            } catch (_e) { /* keep last */ }
-        });
-    };
-
-    const fetchGdelt = () => {
-        const q = encodeURIComponent(`sourcecountry:${g.cc} sourcelang:${g.lang}`);
-        const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${q}` +
-            '&mode=artlist&maxrecords=30&sort=datedesc&format=json';
-        let msg;
-        try { msg = Soup.Message.new('GET', url); } catch (_e) { return; }
-        try { msg.request_headers.append('User-Agent', 'Mozilla/5.0'); } catch (_e) { /* ok */ }
-        session.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null, (s, res) => {
-            let arts = [];
-            try {
-                const bytes = session.send_and_read_finish(res);
-                const data = JSON.parse(new TextDecoder().decode(bytes.get_data()));
-                arts = Array.isArray(data.articles) ? data.articles : [];
-            } catch (_e) {
-                arts = [];
-            }
-            const mapped = arts.map(a => ({
-                title: (a.title || '').trim(),
-                link: a.url || '',
-                source: a.domain || '',
-                date: a.seendate || '',
-                img: a.socialimage || '',
-                gdelt: true,
-            })).filter(x => x.title && x.link);
-            if (mapped.length)
-                commit(mapped);
-            else if (!items.length)
-                fetchGoogle();   // only fall back when we have nothing cached
+            } catch (_e) { /* keep last shown */ }
         });
     };
 
     if (!fresh)
-        fetchGdelt();
-    timer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 900, () => { fetchGdelt(); return GLib.SOURCE_CONTINUE; });
+        fetchGoogle();
+    // Refresh every 10 min while open.
+    timer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 600, () => { fetchGoogle(); return GLib.SOURCE_CONTINUE; });
 
     return {
         actor: container,
