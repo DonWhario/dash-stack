@@ -1,0 +1,12 @@
+{
+  "name": "apple-music-mini",
+  "version": "1.0.0",
+  "description": "Mini navegador para Apple Music web con soporte Widevine",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron . --enable-features=UseOzonePlatform --ozone-platform-hint=auto"
+  },
+  "devDependencies": {
+    "electron": "^44.7.0"
+  }
+}

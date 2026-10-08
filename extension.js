@@ -930,6 +930,12 @@ export default class DockStacksExtension extends Extension {
                     this._cancelHoverOpen();
                     return Clutter.EVENT_PROPAGATE;
                 });
+                // Pressing to grab the stack cancels the pending fan-open, so it
+                // can be dragged to reorder. (A lingering hover still opens it.)
+                btn.connect('button-press-event', () => {
+                    this._cancelHoverOpen();
+                    return Clutter.EVENT_PROPAGATE;
+                });
                 this._attachTooltip(btn, stack.name);
                 this._makeReorderable(btn, 'pinned', index, {token: entry.token});
                 this._attachContextMenu(btn, () => ([
@@ -2166,6 +2172,8 @@ export default class DockStacksExtension extends Extension {
         const draggable = DND.makeDraggable(btn, {dragActorOpacity: 200});
         draggable.connect('drag-begin', () => {
             this._dragActive = true;
+            this._cancelHoverOpen();   // don't let a stack's fan open mid-drag
+            stopShiver(btn);           // the dragged icon shouldn't tremble
             btn.add_style_class_name('dragging');
             this._beginLiveReorder(btn);
         });
