@@ -69,7 +69,7 @@ function card(extra) {
 function textColumn(titleText, subText) {
     const col = new St.BoxLayout({
         style_class: 'dock-widget-text',
-        vertical: true,
+        orientation: Clutter.Orientation.VERTICAL,
         y_align: CENTER,
     });
     const title = new St.Label({style_class: 'dock-widget-title', text: titleText || ''});
@@ -476,11 +476,11 @@ function forecastView(name, _, hooks, spec, width) {
     const cache = rawCache && typeof rawCache === 'object' ? rawCache : {};
     const fc = cache.fc || null;   // last shown forecast (from memory)
 
-    const container = new St.BoxLayout({style_class: 'dock-forecast', vertical: true});
+    const container = new St.BoxLayout({style_class: 'dock-forecast', orientation: Clutter.Orientation.VERTICAL});
     container.set_width(width);
 
     // ---- Current conditions header ----
-    const head = new St.BoxLayout({style_class: 'dock-fc-head', vertical: true});
+    const head = new St.BoxLayout({style_class: 'dock-fc-head', orientation: Clutter.Orientation.VERTICAL});
     const locRow = new St.BoxLayout({style_class: 'dock-fc-loc'});
     locRow.add_child(new St.Icon({icon_name: 'find-location-symbolic', icon_size: 14}));
     locRow.add_child(new St.Label({style_class: 'dock-fc-loc-label', text: name || cache.title || _('Clima')}));
@@ -488,7 +488,7 @@ function forecastView(name, _, hooks, spec, width) {
 
     const bigRow = new St.BoxLayout({style_class: 'dock-fc-bigrow'});
     const bigTemp = new St.Label({style_class: 'dock-fc-big', text: (fc && fc.cur && fc.cur.temp) || '…', y_align: CENTER});
-    const condBox = new St.BoxLayout({vertical: true, x_expand: true, x_align: Clutter.ActorAlign.END, y_align: CENTER});
+    const condBox = new St.BoxLayout({orientation: Clutter.Orientation.VERTICAL, x_expand: true, x_align: Clutter.ActorAlign.END, y_align: CENTER});
     const condIcon = new St.Icon({style_class: 'dock-fc-cond-icon', icon_name: (fc && fc.cur && fc.cur.icon) || 'weather-clear-symbolic', icon_size: 34, x_align: Clutter.ActorAlign.END});
     const condLabel = new St.Label({style_class: 'dock-fc-cond', text: (fc && fc.cur && fc.cur.cond) || '', x_align: Clutter.ActorAlign.END});
     condBox.add_child(condIcon);
@@ -517,7 +517,7 @@ function forecastView(name, _, hooks, spec, width) {
     const hourRefs = [];
     const offsets = [0, 3, 6, 9];
     offsets.forEach((off, k) => {
-        const cell = new St.BoxLayout({style_class: 'dock-fc-hour', vertical: true, x_expand: true});
+        const cell = new St.BoxLayout({style_class: 'dock-fc-hour', orientation: Clutter.Orientation.VERTICAL, x_expand: true});
         const ht = new St.Label({style_class: 'dock-fc-htime', text: now.add_hours(off).format('%H:00'), x_align: CENTER});
         const chc = fc && fc.hours && fc.hours[k];
         const hi = new St.Icon({icon_name: (chc && chc.icon) || 'weather-clear-symbolic', icon_size: 18, x_align: CENTER});
@@ -531,7 +531,7 @@ function forecastView(name, _, hooks, spec, width) {
     container.add_child(hoursBox);
 
     // ---- Daily (5 days) ----
-    const daysBox = new St.BoxLayout({style_class: 'dock-fc-days', vertical: true});
+    const daysBox = new St.BoxLayout({style_class: 'dock-fc-days', orientation: Clutter.Orientation.VERTICAL});
     const dayRefs = [];
     for (let i = 0; i < 5; i++) {
         const dt = now.add_days(i);
@@ -704,7 +704,7 @@ function buildCalendar() {
     const todayM = now.get_month();
     const todayD = now.get_day_of_month();
 
-    const container = new St.BoxLayout({style_class: 'dock-calendar', vertical: true});
+    const container = new St.BoxLayout({style_class: 'dock-calendar', orientation: Clutter.Orientation.VERTICAL});
     const head = new St.BoxLayout({style_class: 'dock-calendar-head'});
     const prev = new St.Button({
         style_class: 'dock-calendar-nav',
@@ -734,7 +734,7 @@ function buildCalendar() {
     container.add_child(grid);
 
     // Events of the selected day (from GNOME Online Accounts / calendars).
-    const eventsBox = new St.BoxLayout({style_class: 'dock-calendar-events', vertical: true});
+    const eventsBox = new St.BoxLayout({style_class: 'dock-calendar-events', orientation: Clutter.Orientation.VERTICAL});
     container.add_child(eventsBox);
 
     // Event source: aggregates the calendars connected in GNOME (Google,
@@ -883,7 +883,7 @@ function openCalendar(sourceActor) {
 
 // Grid clock widget: big ticking time + date, with the month calendar below.
 function makeClockGrid(spec, _) {
-    const container = new St.BoxLayout({style_class: 'dock-clock-grid', vertical: true});
+    const container = new St.BoxLayout({style_class: 'dock-clock-grid', orientation: Clutter.Orientation.VERTICAL});
     const timeL = new St.Label({style_class: 'dock-clock-grid-time', x_align: CENTER});
     const dateL = new St.Label({style_class: 'dock-clock-grid-date', x_align: CENTER});
     container.add_child(timeL);
@@ -1127,7 +1127,7 @@ function makeSystem(spec, iconSize, _) {
         cr.$dispose();
     });
 
-    const info = new St.BoxLayout({style_class: 'dock-widget-text', vertical: true, y_align: CENTER});
+    const info = new St.BoxLayout({style_class: 'dock-widget-text', orientation: Clutter.Orientation.VERTICAL, y_align: CENTER});
     const l1 = new St.Label({style_class: 'dock-widget-title'});
     const l2 = new St.Label({style_class: 'dock-widget-sub'});
     info.add_child(l1);
@@ -1171,7 +1171,7 @@ function makeClock(spec, iconSize, _) {
     } else {
         setCardBg(box, 'reloj.png');
     }
-    const info = new St.BoxLayout({style_class: 'dock-widget-text', vertical: true, y_align: CENTER});
+    const info = new St.BoxLayout({style_class: 'dock-widget-text', orientation: Clutter.Orientation.VERTICAL, y_align: CENTER});
     const big = new St.Label({style_class: 'dock-widget-time'});
     const sub = new St.Label({style_class: 'dock-widget-sub'});
     info.add_child(big);
@@ -1397,7 +1397,7 @@ function makeNews(spec, iconSize, _, lang, hooks) {
 
 // Popup with the list of headlines; each opens the article in the browser.
 function openNews(sourceActor, items, _) {
-    const container = new St.BoxLayout({style_class: 'dock-news', vertical: true});
+    const container = new St.BoxLayout({style_class: 'dock-news', orientation: Clutter.Orientation.VERTICAL});
     const base = sourceActor && sourceActor.width ? sourceActor.width : 0;
     container.set_width(Math.min(460, Math.max(340, base * 2)));
 
@@ -1411,7 +1411,7 @@ function openNews(sourceActor, items, _) {
     } else {
         const scroll = new St.ScrollView({style_class: 'dock-news-scroll'});
         scroll.set_policy(St.PolicyType.NEVER, St.PolicyType.AUTOMATIC);
-        const list = new St.BoxLayout({vertical: true});
+        const list = new St.BoxLayout({orientation: Clutter.Orientation.VERTICAL});
         scroll.set_child(list);
         const max = Math.min(items.length, 15);
         for (let i = 0; i < max; i++) {
@@ -1507,7 +1507,7 @@ function makePhotos(spec, iconSize, _, big) {
     const box = new St.BoxLayout({
         style_class: 'dock-widget dock-widget-photos' + (big ? ' dock-widget-photos-big' : ''),
         reactive: true,
-        vertical: true,
+        orientation: Clutter.Orientation.VERTICAL,
         y_align: CENTER,
     });
     const ph = big ? 200 : Math.max(40, Math.round(iconSize * 0.9));
@@ -1566,9 +1566,9 @@ function openPhotos(sourceActor, images, startIdx, _) {
     let idx = startIdx || 0;
     const wrap = (i) => ((i % images.length) + images.length) % images.length;
 
-    const container = new St.BoxLayout({style_class: 'dock-photos-popup', vertical: true});
+    const container = new St.BoxLayout({style_class: 'dock-photos-popup', orientation: Clutter.Orientation.VERTICAL});
 
-    const frame = new St.BoxLayout({style_class: 'dock-photos-frame', vertical: true});
+    const frame = new St.BoxLayout({style_class: 'dock-photos-frame', orientation: Clutter.Orientation.VERTICAL});
     const big = new St.Widget({style_class: 'dock-photos-big'});
     big.set_size(360, 260);
     frame.add_child(big);
@@ -1815,7 +1815,7 @@ function makeNewsGrid(spec, _, hooks) {
     const code = (spec.country || 'CL').toUpperCase();
     const c = NEWS_COUNTRIES[code] || NEWS_COUNTRIES.CL;
 
-    const container = new St.BoxLayout({style_class: 'dock-newsfeed', vertical: true});
+    const container = new St.BoxLayout({style_class: 'dock-newsfeed', orientation: Clutter.Orientation.VERTICAL});
     container.set_width(440);
     container.add_child(new St.Label({
         style_class: 'dock-newsfeed-title',
@@ -1823,7 +1823,7 @@ function makeNewsGrid(spec, _, hooks) {
     }));
     const scroll = new St.ScrollView({style_class: 'dock-newsfeed-scroll', y_expand: true});
     scroll.set_policy(St.PolicyType.NEVER, St.PolicyType.AUTOMATIC);
-    const list = new St.BoxLayout({style_class: 'dock-newsfeed-list', vertical: true});
+    const list = new St.BoxLayout({style_class: 'dock-newsfeed-list', orientation: Clutter.Orientation.VERTICAL});
     scroll.set_child(list);
     container.add_child(scroll);
 
@@ -1864,7 +1864,7 @@ function makeNewsGrid(spec, _, hooks) {
             const realUrl = it.gdelt ? it.link : (decodeGoogleNewsUrl(it.link) || it.link);
             loadNewsThumb(imgSession, realUrl, it.img, thumb, 168);
             const vb = new St.BoxLayout({
-                vertical: true, x_expand: true, x_align: Clutter.ActorAlign.FILL,
+                orientation: Clutter.Orientation.VERTICAL, x_expand: true, x_align: Clutter.ActorAlign.FILL,
             });
             const meta = new St.BoxLayout({style_class: 'dock-newsfeed-meta'});
             meta.add_child(new St.Label({
@@ -1947,7 +1947,7 @@ function fmtClock(us) {
 
 function makeMprisGrid(spec, _) {
     const bus = Gio.DBus.session;
-    const container = new St.BoxLayout({style_class: 'dock-mpris-grid', vertical: true});
+    const container = new St.BoxLayout({style_class: 'dock-mpris-grid', orientation: Clutter.Orientation.VERTICAL});
     container.set_width(300);
 
     const art = new St.Icon({
@@ -2198,7 +2198,7 @@ function makeChatGrid(spec, _, hooks) {
         ? (hooks.getChatLocalUrl() || 'http://localhost:1234/v1') : '';
     const ready = isLocal || !!key;
 
-    const container = new St.BoxLayout({style_class: 'dock-chat', vertical: true});
+    const container = new St.BoxLayout({style_class: 'dock-chat', orientation: Clutter.Orientation.VERTICAL});
     container.set_width(380);
 
     const header = new St.BoxLayout({style_class: 'dock-chat-head'});
@@ -2211,7 +2211,7 @@ function makeChatGrid(spec, _, hooks) {
 
     const scroll = new St.ScrollView({style_class: 'dock-chat-scroll', y_expand: true});
     scroll.set_policy(St.PolicyType.NEVER, St.PolicyType.AUTOMATIC);
-    const msgs = new St.BoxLayout({style_class: 'dock-chat-msgs', vertical: true});
+    const msgs = new St.BoxLayout({style_class: 'dock-chat-msgs', orientation: Clutter.Orientation.VERTICAL});
     scroll.set_child(msgs);
     container.add_child(scroll);
 
@@ -2244,7 +2244,7 @@ function makeChatGrid(spec, _, hooks) {
     const addBubble = (role, text) => {
         const bubble = new St.BoxLayout({
             style_class: `dock-chat-bubble ${role === 'user' ? 'user' : 'ai'}`,
-            vertical: true,
+            orientation: Clutter.Orientation.VERTICAL,
             x_expand: true,
             x_align: role === 'user' ? Clutter.ActorAlign.END : Clutter.ActorAlign.START,
         });
