@@ -1885,6 +1885,8 @@ function makeNewsGrid(spec, _, hooks) {
                 if (openUrl) {
                     try { Gio.AppInfo.launch_default_for_uri(openUrl, null); } catch (_e) { /* ok */ }
                 }
+                if (hooks && hooks.closeGrid)
+                    hooks.closeGrid();   // leave the grid to read the article
             });
             list.add_child(cardBtn);
         }
