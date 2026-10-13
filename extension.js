@@ -1537,6 +1537,8 @@ export default class DockStacksExtension extends Extension {
                     return '';
                 }
             },
+            // Close the app grid (e.g. when a news card opens an article).
+            closeGrid: () => this._closeAppGrid(),
         };
     }
 
@@ -2456,7 +2458,10 @@ export default class DockStacksExtension extends Extension {
             Main.overview.hide();
         this._currentStackId = stack.id;
 
-        const entries = this._collectEntries(stack);
+        const isFolder = stack.type === 'folder' && stack.path;
+        // Folder stacks list themselves lazily in the browser popup; apps/grid
+        // stacks need the entries up front.
+        const entries = isFolder ? [] : this._collectEntries(stack);
         const iconSize = Math.max(32, this._settings.get_int('icon-size'));
         const style = stack.style || this._settings.get_string('stack-style');
 
@@ -2525,10 +2530,529 @@ export default class DockStacksExtension extends Extension {
             this._closeStack();
         };
 
-        if (style === 'fan')
+        if (isFolder)
+            this._buildFolderFan(overlay, stack, sourceBtn, iconSize);
+        else if (style === 'fan')
             this._buildFan(overlay, stack, entries, sourceBtn, iconSize, onActivate);
         else
             this._buildGrid(overlay, stack, entries, sourceBtn, iconSize, onActivate);
+    }
+
+    // Navigable fan for folder stacks: same fanned look as app stacks, but you
+    // can scroll (wheel) through long folders, drill into sub-folders in place,
+    // and a pinned card on top shows the current folder (and opens it in Files).
+    _buildFolderFan(overlay, stack, sourceBtn, iconSize) {
+        this._fanCtx = {
+            overlay,
+            stack,
+            sourceBtn,
+            iconSize,
+            chain: [{name: stack.name, path: stack.path}],  // root → current
+            scroll: 0,       // index of the first visible entry
+            total: 0,        // entries in the current folder
+            window: 1,       // how many entries are visible at once
+            cells: [],       // current card actors (rebuilt each render)
+            smooth: 0,       // touchpad smooth-scroll accumulator
+        };
+        // Wheel / touchpad scroll shifts the visible window of entries.
+        overlay.connect('scroll-event', (_a, ev) => {
+            const dir = ev.get_scroll_direction();
+            if (dir === Clutter.ScrollDirection.UP) {
+                this._scrollFolderFan(-1);
+                return Clutter.EVENT_STOP;
+            }
+            if (dir === Clutter.ScrollDirection.DOWN) {
+                this._scrollFolderFan(1);
+                return Clutter.EVENT_STOP;
+            }
+            if (dir === Clutter.ScrollDirection.SMOOTH) {
+                const [, dy] = ev.get_scroll_delta();
+                this._fanCtx.smooth += dy;
+                if (this._fanCtx.smooth <= -1) {
+                    this._fanCtx.smooth = 0;
+                    this._scrollFolderFan(-1);
+                } else if (this._fanCtx.smooth >= 1) {
+                    this._fanCtx.smooth = 0;
+                    this._scrollFolderFan(1);
+                }
+                return Clutter.EVENT_STOP;
+            }
+            return Clutter.EVENT_PROPAGATE;
+        });
+        this._renderFolderFan(true);
+    }
+
+    _scrollFolderFan(delta) {
+        const ctx = this._fanCtx;
+        if (!ctx)
+            return;
+        const maxStart = Math.max(0, ctx.total - ctx.window);
+        const next = Math.max(0, Math.min(ctx.scroll + delta, maxStart));
+        if (next === ctx.scroll)
+            return;
+        ctx.scroll = next;
+        this._renderFolderFan(false);   // instant shift (no fly-in per notch)
+    }
+
+    _renderFolderFan(animate) {
+        const ctx = this._fanCtx;
+        if (!ctx)
+            return;
+        this._hideTooltip();   // drop any tooltip from a card we're destroying
+        for (const c of ctx.cells)
+            c.destroy();
+        ctx.cells = [];
+
+        const monitor = Main.layoutManager.primaryMonitor;
+        const [, by] = ctx.sourceBtn.get_transformed_position();
+        const step = ctx.iconSize + 18;
+        const goingUp = this._settings.get_string('position') !== 'top';
+        const current = ctx.chain[ctx.chain.length - 1];
+        // Cache the listing per folder so scrolling doesn't re-read the disk
+        // on every notch; re-read only when the current folder changes.
+        if (!ctx.cache || ctx.cache.path !== current.path)
+            ctx.cache = {path: current.path, entries: this._listFolder(current.path)};
+        const all = ctx.cache.entries;
+        ctx.total = all.length;
+
+        // Pinned (non-scrolling) cards: the current-folder header, plus a
+        // "back" card when we are inside a sub-folder.
+        const pinned = 1 + (ctx.chain.length > 1 ? 1 : 0);
+        // How many entry cards fit in the available vertical space.
+        const avail = goingUp
+            ? (by - monitor.y - 24)
+            : ((monitor.y + monitor.height) - (by + ctx.sourceBtn.height) - 24);
+        let fit = Math.floor(avail / step) - pinned;
+        fit = Math.max(3, Math.min(fit, 16 - pinned));
+        ctx.window = fit;
+
+        const maxStart = Math.max(0, all.length - fit);
+        if (ctx.scroll > maxStart)
+            ctx.scroll = maxStart;
+        const start = ctx.scroll;
+        const slice = all.slice(start, start + fit);
+
+        // Build the fan bottom→top: [entries…] [back?] [header(top, pinned)].
+        const items = [];
+        for (const entry of slice) {
+            items.push({
+                card: {name: entry.name, gicon: entry.gicon, kind: entry.kind},
+                entry,   // raw file/folder → enables the right-click menu
+                onClick: () => {
+                    if (entry.kind === 'folder') {
+                        ctx.chain.push({name: entry.name, path: entry.path});
+                        ctx.scroll = 0;
+                        this._renderFolderFan(true);
+                    } else {
+                        this._activateEntry(entry);
+                        this._closeStack();
+                    }
+                },
+            });
+        }
+        if (ctx.chain.length > 1) {
+            const parent = ctx.chain[ctx.chain.length - 2];
+            items.push({
+                card: {name: _('Volver a %s').replace('%s', parent.name),
+                    gicon: new Gio.ThemedIcon({name: 'go-previous-symbolic'}), kind: 'back'},
+                onClick: () => {
+                    ctx.chain.pop();
+                    ctx.scroll = 0;
+                    this._renderFolderFan(true);
+                },
+            });
+        }
+        const total = all.length;
+        const range = total > fit ? `  (${start + 1}–${Math.min(start + fit, total)}/${total})` : '';
+        items.push({
+            card: {name: current.name + range,
+                gicon: new Gio.ThemedIcon({name: 'folder-open-symbolic'}), kind: 'header'},
+            onClick: () => {
+                if (Main.overview.visible)
+                    Main.overview.hide();
+                try {
+                    Gio.AppInfo.launch_default_for_uri(
+                        Gio.File.new_for_path(current.path).get_uri(), null);
+                } catch (e) {
+                    logError(e, 'Dock Stack: no se pudo abrir la carpeta');
+                }
+                this._closeStack();
+            },
+        });
+
+        const cells = items.map((it) => {
+            const onSec = it.entry
+                ? (x, y) => this._showFanItemMenu(it.entry, x, y)
+                : null;
+            const cell = this._makeFanCell(it.card, ctx.iconSize, it.onClick, onSec);
+            if (it.card.kind === 'header')
+                cell.add_style_class_name('dock-fan-header');
+            else if (it.card.kind === 'back')
+                cell.add_style_class_name('dock-fan-back');
+            else if (it.card.kind === 'folder')
+                cell.add_style_class_name('dock-fan-folder');
+            return cell;
+        });
+        ctx.cells = cells;
+        this._placeFanCells(ctx.overlay, cells, ctx.sourceBtn, ctx.iconSize, animate);
+    }
+
+    // Right-click menu for a file/folder in the folder fan. GNOME Shell cannot
+    // show the file manager's own menu, so this offers the equivalent actions,
+    // plus "Mostrar en Archivos" which opens the file manager with the item
+    // selected for anything not covered here (Comprimir, Scripts, Correo-e…).
+    _showFanItemMenu(entry, x, y) {
+        // Header: the selected file/folder shown horizontally, so you can see
+        // what the menu acts on while the fan itself is hidden behind the menu.
+        const rows = [{header: true, label: entry.name, gicon: entry.gicon}];
+        if (entry.kind === 'folder') {
+            rows.push({label: _('Abrir'), iconName: 'folder-open-symbolic', action: () => {
+                this._fanMenuClose();
+                const ctx = this._fanCtx;
+                if (!ctx)
+                    return;
+                ctx.chain.push({name: entry.name, path: entry.path});
+                ctx.scroll = 0;
+                this._renderFolderFan(true);
+            }});
+        } else {
+            rows.push({label: _('Abrir'), iconName: 'document-open-symbolic', action: () => {
+                this._fanMenuClose();
+                this._activateEntry(entry);
+                this._closeStack();
+            }});
+            rows.push({label: _('Abrir con otra aplicación…'),
+                iconName: 'application-x-executable-symbolic',
+                action: () => this._showOpenWithMenu(entry, x, y)});
+        }
+        rows.push({sep: true});
+        rows.push({label: _('Copiar'), iconName: 'edit-copy-symbolic', action: () => {
+            this._fanMenuClose();
+            this._clipboardFiles(entry.uri, 'copy');
+        }});
+        rows.push({label: _('Cortar'), iconName: 'edit-cut-symbolic', action: () => {
+            this._fanMenuClose();
+            this._clipboardFiles(entry.uri, 'cut');
+        }});
+        rows.push({label: _('Renombrar…'), iconName: 'document-edit-symbolic',
+            action: () => this._showRenameDialog(entry)});
+        rows.push({label: _('Mover a la papelera'), iconName: 'user-trash-symbolic', action: () => {
+            this._fanMenuClose();
+            this._trashFanItem(entry);
+        }});
+        rows.push({sep: true});
+        rows.push({label: _('Propiedades'), iconName: 'document-properties-symbolic', action: () => {
+            this._fanMenuClose();
+            this._fileManager1('ShowItemProperties', entry.uri);
+            this._closeStack();
+        }});
+        rows.push({label: _('Mostrar en Archivos'), iconName: 'folder-symbolic', action: () => {
+            this._fanMenuClose();
+            this._fileManager1('ShowItems', entry.uri);
+            this._closeStack();
+        }});
+        this._openCtxMenu(rows, x, y);
+    }
+
+    // Second "page" of the context menu: applications that can open the file.
+    _showOpenWithMenu(entry, x, y) {
+        let apps = [];
+        try {
+            const ctype = Gio.content_type_guess(entry.name, null)[0];
+            apps = Gio.AppInfo.get_recommended_for_type(ctype) || [];
+        } catch (e) {
+            logError(e, 'Dock Stack: abrir con');
+        }
+        const rows = [
+            {header: true, label: entry.name, gicon: entry.gicon},
+            {label: _('‹ Atrás'), iconName: 'go-previous-symbolic',
+                action: () => this._showFanItemMenu(entry, x, y)},
+            {sep: true},
+        ];
+        for (const app of apps) {
+            rows.push({label: app.get_display_name(), gicon: app.get_icon(), action: () => {
+                this._fanMenuClose();
+                try {
+                    app.launch_uris([entry.uri], null);
+                } catch (e) {
+                    logError(e, 'Dock Stack: lanzar aplicación');
+                }
+                this._closeStack();
+            }});
+        }
+        if (!apps.length)
+            rows.push({label: _('(sin aplicaciones)'), action: () => this._fanMenuClose()});
+        this._openCtxMenu(rows, x, y);
+    }
+
+    // Builds and shows a context-menu actor inside the stack overlay. A full
+    // screen "catcher" behind it closes the menu (not the whole fan) on an
+    // outside click.
+    _openCtxMenu(rows, x, y) {
+        this._fanMenuClose();
+        const ctx = this._fanCtx;
+        if (!ctx)
+            return;
+        // The fan stays visible; the menu just sits on top of the selected card.
+        const overlay = ctx.overlay;
+        const catcher = new St.Widget({
+            reactive: true,
+            x: 0, y: 0,
+            width: global.stage.width,
+            height: global.stage.height,
+        });
+        catcher.connect('button-press-event', () => {
+            this._fanMenuClose();
+            return Clutter.EVENT_STOP;
+        });
+        catcher.connect('scroll-event', () => Clutter.EVENT_STOP);
+        overlay.add_child(catcher);
+
+        const menu = new St.BoxLayout({
+            style_class: 'dock-ctx-menu',
+            orientation: Clutter.Orientation.VERTICAL,
+            reactive: true,
+        });
+        for (const row of rows) {
+            if (row.header) {
+                const h = new St.BoxLayout({
+                    style_class: 'dock-ctx-header',
+                    orientation: Clutter.Orientation.HORIZONTAL,
+                    x_expand: true,
+                    x_align: Clutter.ActorAlign.FILL,
+                });
+                if (row.gicon)
+                    h.add_child(new St.Icon({gicon: row.gicon, icon_size: 22,
+                        style_class: 'dock-ctx-icon', y_align: Clutter.ActorAlign.CENTER}));
+                const hl = new St.Label({style_class: 'dock-ctx-header-label',
+                    text: row.label, x_expand: true,
+                    x_align: Clutter.ActorAlign.START, y_align: Clutter.ActorAlign.CENTER});
+                hl.clutter_text.set_ellipsize(3 /* END */);
+                h.add_child(hl);
+                menu.add_child(h);
+                continue;
+            }
+            if (row.sep) {
+                menu.add_child(new St.Widget({style_class: 'dock-ctx-sep'}));
+                continue;
+            }
+            const item = new St.Button({style_class: 'dock-ctx-item', can_focus: true, x_expand: true});
+            const box = new St.BoxLayout({
+                orientation: Clutter.Orientation.HORIZONTAL,
+                x_expand: true,
+                x_align: Clutter.ActorAlign.FILL,
+            });
+            if (row.gicon)
+                box.add_child(new St.Icon({gicon: row.gicon, icon_size: 16,
+                    style_class: 'dock-ctx-icon', y_align: Clutter.ActorAlign.CENTER}));
+            else if (row.iconName)
+                box.add_child(new St.Icon({icon_name: row.iconName, icon_size: 16,
+                    style_class: 'dock-ctx-icon', y_align: Clutter.ActorAlign.CENTER}));
+            box.add_child(new St.Label({text: row.label, x_expand: true,
+                x_align: Clutter.ActorAlign.START, y_align: Clutter.ActorAlign.CENTER}));
+            item.set_child(box);
+            item.connect('clicked', row.action);
+            menu.add_child(item);
+        }
+        overlay.add_child(menu);
+        // Keep the menu (and its catcher) above every fan card.
+        overlay.set_child_above_sibling(catcher, null);
+        overlay.set_child_above_sibling(menu, null);
+        this._fanMenu = menu;
+        this._fanMenuCatcher = catcher;
+
+        const monitor = Main.layoutManager.primaryMonitor;
+        const [, mw] = menu.get_preferred_width(-1);
+        const [, mh] = menu.get_preferred_height(mw);
+        let px = Math.min(x, monitor.x + monitor.width - mw - 8);
+        let py = Math.min(y, monitor.y + monitor.height - mh - 8);
+        px = Math.max(monitor.x + 8, px);
+        py = Math.max(monitor.y + 8, py);
+        menu.set_position(Math.round(px), Math.round(py));
+        menu.opacity = 0;
+        menu.ease({opacity: 255, duration: 80, mode: Clutter.AnimationMode.EASE_OUT_QUAD});
+    }
+
+    _fanMenuClose() {
+        if (this._fanMenu) {
+            this._fanMenu.destroy();
+            this._fanMenu = null;
+        }
+        if (this._fanMenuCatcher) {
+            this._fanMenuCatcher.destroy();
+            this._fanMenuCatcher = null;
+        }
+    }
+
+    // Copy/cut a file to the clipboard in the format the file manager pastes
+    // (x-special/gnome-copied-files: "copy\n<uri>" or "cut\n<uri>").
+    _clipboardFiles(uri, op) {
+        try {
+            const data = `${op}\n${uri}`;
+            const bytes = new GLib.Bytes(new TextEncoder().encode(data));
+            St.Clipboard.get_default().set_content(
+                St.ClipboardType.CLIPBOARD, 'x-special/gnome-copied-files', bytes);
+        } catch (e) {
+            logError(e, 'Dock Stack: copiar al portapapeles');
+        }
+    }
+
+    _trashFanItem(entry) {
+        try {
+            const f = Gio.File.new_for_uri(entry.uri);
+            f.trash_async(GLib.PRIORITY_DEFAULT, null, (src, res) => {
+                try {
+                    src.trash_finish(res);
+                } catch (e) {
+                    logError(e, 'Dock Stack: mover a la papelera');
+                }
+                this._refreshFanAfterChange();
+            });
+        } catch (e) {
+            logError(e, 'Dock Stack: mover a la papelera');
+        }
+    }
+
+    // Re-read the current folder and redraw the fan after a change (trash/rename).
+    _refreshFanAfterChange() {
+        const ctx = this._fanCtx;
+        if (!ctx)
+            return;
+        ctx.cache = null;
+        this._renderFolderFan(false);
+    }
+
+    // Open the file manager focused on an item, or its Properties dialog, via
+    // the standard org.freedesktop.FileManager1 D-Bus interface.
+    _fileManager1(method, uri) {
+        try {
+            Gio.DBus.session.call(
+                'org.freedesktop.FileManager1',
+                '/org/freedesktop/FileManager1',
+                'org.freedesktop.FileManager1',
+                method,
+                new GLib.Variant('(ass)', [[uri], '']),
+                null, Gio.DBusCallFlags.NONE, -1, null,
+                (o, res) => {
+                    try {
+                        Gio.DBus.session.call_finish(res);
+                    } catch (e) {
+                        logError(e, 'Dock Stack: FileManager1');
+                    }
+                });
+        } catch (e) {
+            logError(e, 'Dock Stack: FileManager1');
+        }
+    }
+
+    _showRenameDialog(entry) {
+        this._fanMenuClose();
+        const ctx = this._fanCtx;
+        if (!ctx)
+            return;
+        const overlay = ctx.overlay;
+        const catcher = new St.Widget({
+            reactive: true, x: 0, y: 0,
+            width: global.stage.width, height: global.stage.height,
+        });
+        catcher.connect('button-press-event', () => {
+            this._fanMenuClose();
+            return Clutter.EVENT_STOP;
+        });
+        catcher.connect('scroll-event', () => Clutter.EVENT_STOP);
+        overlay.add_child(catcher);
+
+        const dlg = new St.BoxLayout({
+            style_class: 'dock-rename-dialog',
+            orientation: Clutter.Orientation.VERTICAL,
+            reactive: true,
+        });
+        dlg.add_child(new St.Label({style_class: 'dock-rename-title', text: _('Renombrar')}));
+        const te = new St.Entry({style_class: 'dock-rename-entry', text: entry.name, can_focus: true});
+        dlg.add_child(te);
+        const btns = new St.BoxLayout({style_class: 'dock-rename-btns'});
+        const cancel = new St.Button({style_class: 'dock-rename-btn', label: _('Cancelar'), can_focus: true});
+        const ok = new St.Button({style_class: 'dock-rename-btn suggested', label: _('Renombrar'),
+            can_focus: true, x_expand: true});
+        btns.add_child(cancel);
+        btns.add_child(ok);
+        dlg.add_child(btns);
+        overlay.add_child(dlg);
+        this._fanMenu = dlg;
+        this._fanMenuCatcher = catcher;
+
+        const monitor = Main.layoutManager.primaryMonitor;
+        const [, dw] = dlg.get_preferred_width(-1);
+        const [, dh] = dlg.get_preferred_height(dw);
+        dlg.set_position(
+            Math.round(monitor.x + (monitor.width - dw) / 2),
+            Math.round(monitor.y + (monitor.height - dh) / 2));
+
+        const doRename = () => {
+            const nn = te.get_text().trim();
+            this._fanMenuClose();
+            if (!nn || nn === entry.name)
+                return;
+            try {
+                const f = Gio.File.new_for_uri(entry.uri);
+                f.set_display_name_async(nn, GLib.PRIORITY_DEFAULT, null, (src, res) => {
+                    try {
+                        src.set_display_name_finish(res);
+                    } catch (e) {
+                        logError(e, 'Dock Stack: renombrar');
+                    }
+                    this._refreshFanAfterChange();
+                });
+            } catch (e) {
+                logError(e, 'Dock Stack: renombrar');
+            }
+        };
+        ok.connect('clicked', doRename);
+        cancel.connect('clicked', () => this._fanMenuClose());
+        te.clutter_text.connect('activate', doRename);
+        te.grab_key_focus();
+        // Pre-select the name (minus extension) for a quick overwrite.
+        const dot = entry.name.lastIndexOf('.');
+        te.clutter_text.set_selection(0, dot > 0 ? dot : entry.name.length);
+    }
+
+    // List a folder's contents: folders first (so they are easy to drill into),
+    // then files, each group sorted by name.
+    _listFolder(path) {
+        const entries = [];
+        const max = this._settings.get_int('stack-max-items');
+        try {
+            const dir = Gio.File.new_for_path(path);
+            const en = dir.enumerate_children(
+                'standard::name,standard::display-name,standard::icon,standard::is-hidden,standard::type',
+                Gio.FileQueryInfoFlags.NONE, null);
+            let info;
+            while ((info = en.next_file(null)) !== null) {
+                if (info.get_is_hidden())
+                    continue;
+                const child = dir.get_child(info.get_name());
+                const isDir = info.get_file_type() === Gio.FileType.DIRECTORY;
+                entries.push({
+                    name: info.get_display_name(),
+                    gicon: info.get_icon() ??
+                        new Gio.ThemedIcon({name: isDir ? 'folder' : 'text-x-generic'}),
+                    kind: isDir ? 'folder' : 'file',
+                    uri: child.get_uri(),
+                    path: isDir ? child.get_path() : null,
+                });
+            }
+            en.close(null);
+        } catch (e) {
+            logError(e, 'Dock Stack: no se pudo leer la carpeta');
+        }
+        const desc = this._settings.get_string('stack-sort') === 'desc';
+        entries.sort((a, b) => {
+            if (a.kind !== b.kind)
+                return a.kind === 'folder' ? -1 : 1;   // folders before files
+            const c = a.name.localeCompare(b.name);
+            return desc ? -c : c;
+        });
+        return entries.slice(0, max);
     }
 
     _buildGrid(overlay, stack, entries, sourceBtn, iconSize, onActivate) {
@@ -2567,11 +3091,6 @@ export default class DockStacksExtension extends Extension {
     }
 
     _buildFan(overlay, stack, entries, sourceBtn, iconSize, onActivate) {
-        const monitor = Main.layoutManager.primaryMonitor;
-        const [bx, by] = sourceBtn.get_transformed_position();
-        const bw = sourceBtn.width;
-        const centerX = bx + bw / 2;
-
         const MAX_FAN = 14;
         const ordered = entries.slice(0, MAX_FAN);
         // "Open folder" header on top (folder stacks only)
@@ -2584,13 +3103,40 @@ export default class DockStacksExtension extends Extension {
             });
         }
 
+        const cells = ordered.map((entry) =>
+            this._makeFanCell(entry, iconSize, () => {
+                if (entry.kind === 'open-folder') {
+                    if (Main.overview.visible)
+                        Main.overview.hide();
+                    try {
+                        Gio.AppInfo.launch_default_for_uri(entry.uri, null);
+                    } catch (e) {
+                        logError(e, 'Dock Stack: no se pudo abrir la carpeta');
+                    }
+                    this._closeStack();
+                } else {
+                    onActivate(entry);
+                }
+            }));
+        this._placeFanCells(overlay, cells, sourceBtn, iconSize, true);
+    }
+
+    // Shared fan geometry: positions (and optionally animates in) an array of
+    // already-created fan cards, from the one nearest the dock (index 0) up to
+    // the top of the deck. Reused by app stacks and the navigable folder fan.
+    _placeFanCells(overlay, cells, sourceBtn, iconSize, animate) {
+        const monitor = Main.layoutManager.primaryMonitor;
+        const [bx, by] = sourceBtn.get_transformed_position();
+        const bw = sourceBtn.width;
+        const centerX = bx + bw / 2;
+
         const goingUp = this._settings.get_string('position') !== 'top';
         const step = iconSize + 18;   // vertical spacing between items
         const curve = this._settings.get_int('fan-curve'); // strip curvature
         const tilt = this._settings.get_int('fan-tilt');    // progressive rotation (°)
         const useTilt = tilt > 0;
         const startY = by - 6;        // just above the dock
-        const n = ordered.length;
+        const n = cells.length;
         // Horizontal arc offset for item i (0 bottom → n-1 top)
         const curveX = (i) => {
             const t = n > 1 ? i / (n - 1) : 0;
@@ -2610,21 +3156,7 @@ export default class DockStacksExtension extends Extension {
         const fanW = Math.round(iconSize * 4);
         const firstGap = 8;             // gap between the dock and the first card
 
-        ordered.forEach((entry, i) => {
-            const cell = this._makeFanCell(entry, iconSize, () => {
-                if (entry.kind === 'open-folder') {
-                    if (Main.overview.visible)
-                        Main.overview.hide();
-                    try {
-                        Gio.AppInfo.launch_default_for_uri(entry.uri, null);
-                    } catch (e) {
-                        logError(e, 'Dock Stack: no se pudo abrir la carpeta');
-                    }
-                    this._closeStack();
-                } else {
-                    onActivate(entry);
-                }
-            });
+        cells.forEach((cell, i) => {
             overlay.add_child(cell);
 
             let cw;
@@ -2662,13 +3194,25 @@ export default class DockStacksExtension extends Extension {
             tx = Math.max(monitor.x + 8, Math.min(tx, monitor.x + monitor.width - cw - 8));
             ty = Math.max(monitor.y + 8, Math.min(ty, monitor.y + monitor.height - ch - 8));
 
+            cell.set_pivot_point(0.5, 1.0);   // rotate/scale around the base
+            const angle = useTilt ? tiltAngle(i) : 0;
+
+            if (!animate) {
+                // Instant placement (e.g. while scrolling the folder fan).
+                cell.set_position(Math.round(tx), Math.round(ty));
+                cell.opacity = 255;
+                cell.scale_x = 1;
+                cell.scale_y = 1;
+                cell.rotation_angle_z = angle;
+                return;
+            }
+
             // Initial state: all stacked over the dock icon (collapsed)
             const startX = useTilt
                 ? centerX - cw / 2
                 : centerX - cw + RPAD + iconSize / 2;
             cell.set_position(Math.round(startX), Math.round(startY - ch));
             cell.opacity = 0;
-            cell.set_pivot_point(0.5, 1.0);   // rotate/scale around the base
             cell.scale_x = 0.4;
             cell.scale_y = 0.4;
             cell.rotation_angle_z = 0;
@@ -2680,7 +3224,7 @@ export default class DockStacksExtension extends Extension {
                 opacity: 255,
                 scale_x: 1,
                 scale_y: 1,
-                rotation_angle_z: useTilt ? tiltAngle(i) : 0,
+                rotation_angle_z: angle,
                 duration: 140,
                 delay: i * 10,
                 mode: Clutter.AnimationMode.EASE_OUT_QUAD,
@@ -2688,7 +3232,7 @@ export default class DockStacksExtension extends Extension {
         });
     }
 
-    _makeFanCell(entry, iconSize, onClick) {
+    _makeFanCell(entry, iconSize, onClick, onSecondary) {
         const cell = new St.Button({style_class: 'dock-fan-cell', can_focus: true});
         // The frame (pill) wraps the name AND the icon together
         const frame = new St.BoxLayout({
@@ -2712,8 +3256,25 @@ export default class DockStacksExtension extends Extension {
         frame.add_child(lbl);
         if (icon && !iconLeft)
             frame.add_child(icon);
+        // Folders drill in: a trailing chevron hints they open another level.
+        if (entry.kind === 'folder')
+            frame.add_child(new St.Label({
+                style_class: 'dock-fan-chevron',
+                text: '›',
+                y_align: Clutter.ActorAlign.CENTER,
+            }));
         cell.set_child(frame);
         cell.connect('clicked', onClick);
+        // Right-click → file-manager-style context menu (folder fan only).
+        if (onSecondary)
+            cell.connect('button-press-event', (_a, ev) => {
+                if (ev.get_button() === 3) {
+                    const [x, y] = ev.get_coords();
+                    onSecondary(x, y);
+                    return Clutter.EVENT_STOP;
+                }
+                return Clutter.EVENT_PROPAGATE;
+            });
         return cell;
     }
 
@@ -2799,6 +3360,9 @@ export default class DockStacksExtension extends Extension {
             this._stackOverlay.destroy();
             this._stackOverlay = null;
         }
+        this._fanCtx = null;   // folder-fan navigation state
+        this._fanMenu = null;  // context menu / rename dialog (destroyed with overlay)
+        this._fanMenuCatcher = null;
         this._currentStackId = null;
     }
 

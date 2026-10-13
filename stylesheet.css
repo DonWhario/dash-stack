@@ -127,6 +127,142 @@
     max-width: 220px;
 }
 
+/* Chevron hint on folder cards (they drill into another level) */
+.dock-fan-chevron {
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 13pt;
+    font-weight: 700;
+}
+
+/* Sub-folders inside a folder fan: subtle blue accent + brighter border */
+.dock-fan-folder .dock-fan-frame {
+    border-color: rgba(120, 170, 255, 0.35);
+}
+.dock-fan-folder:hover .dock-fan-frame {
+    background-color: rgba(60, 90, 140, 0.95);
+    border-color: rgba(120, 170, 255, 0.6);
+}
+
+/* Pinned current-folder header on top of a folder fan */
+.dock-fan-header .dock-fan-frame {
+    background-color: rgba(30, 30, 30, 0.96);
+    border-color: rgba(255, 255, 255, 0.28);
+}
+.dock-fan-header .dock-fan-label {
+    font-weight: 800;
+}
+
+/* "Back" card inside a sub-folder */
+.dock-fan-back .dock-fan-label {
+    color: #dddddd;
+    font-style: italic;
+}
+
+/* ---- right-click context menu (file-manager-style) ---- */
+.dock-ctx-menu {
+    background-color: rgba(40, 40, 40, 0.98);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 12px;
+    padding: 6px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    min-width: 230px;
+}
+
+/* Header row: the selected file/folder, shown horizontally above the actions */
+.dock-ctx-header {
+    spacing: 10px;
+    padding: 4px 12px 10px 12px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.dock-ctx-header-label {
+    color: #ffffff;
+    font-weight: bold;
+    font-size: 11pt;
+    max-width: 260px;
+}
+
+.dock-ctx-item {
+    border-radius: 8px;
+    padding: 7px 12px;
+    color: #eeeeee;
+    font-size: 10.5pt;
+    text-align: left;
+    transition-duration: 100ms;
+}
+
+.dock-ctx-item:hover,
+.dock-ctx-item:focus {
+    background-color: rgba(120, 170, 255, 0.35);
+    color: #ffffff;
+}
+
+.dock-ctx-icon {
+    margin-right: 10px;
+    color: #dddddd;
+}
+
+.dock-ctx-sep {
+    height: 1px;
+    margin: 4px 6px;
+    background-color: rgba(255, 255, 255, 0.12);
+}
+
+/* ---- rename dialog ---- */
+.dock-rename-dialog {
+    background-color: rgba(40, 40, 40, 0.98);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 14px;
+    padding: 16px;
+    spacing: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+    min-width: 320px;
+}
+
+.dock-rename-title {
+    color: #ffffff;
+    font-weight: bold;
+    font-size: 12pt;
+}
+
+.dock-rename-entry {
+    color: #ffffff;
+    background-color: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    padding: 8px 10px;
+}
+
+.dock-rename-entry:focus {
+    border-color: rgba(120, 170, 255, 0.8);
+}
+
+.dock-rename-btns {
+    spacing: 10px;
+}
+
+.dock-rename-btn {
+    border-radius: 8px;
+    padding: 8px 16px;
+    color: #eeeeee;
+    background-color: rgba(255, 255, 255, 0.12);
+    transition-duration: 100ms;
+}
+
+.dock-rename-btn:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+.dock-rename-btn.suggested {
+    background-color: rgba(53, 132, 228, 0.9);
+    color: #ffffff;
+}
+
+.dock-rename-btn.suggested:hover {
+    background-color: rgba(53, 132, 228, 1.0);
+}
+
 /* ---- applications menu button ---- */
 .dock-apps-button:hover {
     background-color: rgba(255, 255, 255, 0.18);
