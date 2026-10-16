@@ -268,6 +268,22 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         settings.bind('panel-island', islandRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         group.add(islandRow);
 
+        // Island position (left / center / right)
+        const islandPosModel = new Gtk.StringList();
+        [_('Izquierda'), _('Centro'), _('Derecha')].forEach(s => islandPosModel.append(s));
+        const islandPosKeys = ['left', 'center', 'right'];
+        const islandPosRow = new Adw.ComboRow({
+            title: _('Posición de la isla'),
+            subtitle: _('Dónde se coloca el bloque de indicadores en la barra superior'),
+            model: islandPosModel,
+            selected: Math.max(0, islandPosKeys.indexOf(settings.get_string('panel-island-position'))),
+        });
+        islandPosRow.connect('notify::selected', () => {
+            settings.set_string('panel-island-position', islandPosKeys[islandPosRow.selected]);
+        });
+        settings.bind('panel-island', islandPosRow, 'sensitive', Gio.SettingsBindFlags.GET);
+        group.add(islandPosRow);
+
         // Hover shake (trembling icons)
         const shakeRow = new Adw.SwitchRow({
             title: _('Temblor al pasar el ratón'),

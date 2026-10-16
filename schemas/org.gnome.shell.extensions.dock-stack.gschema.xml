@@ -31,6 +31,12 @@
     <value value="1" nick="light"/>
   </enum>
 
+  <enum id="org.gnome.shell.extensions.dock-stack.panel-island-position">
+    <value value="0" nick="left"/>
+    <value value="1" nick="center"/>
+    <value value="2" nick="right"/>
+  </enum>
+
   <enum id="org.gnome.shell.extensions.dock-stack.language">
     <value value="0" nick="auto"/>
     <value value="1" nick="es"/>
@@ -81,7 +87,12 @@
 
     <key name="panel-island" type="b">
       <default>false</default>
-      <summary>Barra superior como isla: dejar visible solo el bloque de indicadores de la derecha (WiFi, idioma, volumen/energía) con fondo redondeado; el resto de la barra queda transparente</summary>
+      <summary>Barra superior como isla: dejar visible solo el bloque de indicadores (WiFi, idioma, volumen/energía) con fondo redondeado; el resto de la barra queda transparente</summary>
+    </key>
+
+    <key name="panel-island-position" enum="org.gnome.shell.extensions.dock-stack.panel-island-position">
+      <default>"right"</default>
+      <summary>Posición de la isla de la barra superior (izquierda, centro o derecha)</summary>
     </key>
 
     <key name="no-overview-startup" type="b">

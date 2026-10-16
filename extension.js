@@ -222,6 +222,8 @@ export default class DockStacksExtension extends Extension {
         this._gridWidgetInstances = [];   // live widgets in the grid (Favoritos)
         this._sidebarWidgetInstances = []; // live widgets in the grid sidebar (chat)
         this._panelIslandActive = false;
+        this._islandSignals = [];
+        this._islandMenuIds = [];
 
         this._startupCompleteId = 0;
         this._buildDock();
@@ -278,6 +280,8 @@ export default class DockStacksExtension extends Extension {
                 setHoverShake(this._settings.get_boolean('hover-shake'));
             else if (key === 'panel-island')
                 this._applyPanelIsland();
+            else if (key === 'panel-island-position')
+                this._positionIsland();
         });
 
         // React to favorites / installed-apps changes
@@ -528,9 +532,9 @@ export default class DockStacksExtension extends Extension {
             panel.add_style_class_name('dock-panel-island');
             if (panel._rightBox) {
                 panel._rightBox.add_style_class_name('dock-panel-right-island');
-                // Same background opacity as the dock (maintainer-configurable
-                // via the 'background-opacity' setting). Set inline so it tracks
-                // the slider; the class only carries radius/padding/shadow.
+                // Same background opacity as the dock (configurable via the
+                // 'background-opacity' setting). Set inline so it tracks the
+                // slider; the class only carries radius/padding/shadow.
                 panel._rightBox.set_style(this._islandBgStyle());
             }
             if (panel._leftBox)
@@ -538,9 +542,110 @@ export default class DockStacksExtension extends Extension {
             if (panel._centerBox)
                 panel._centerBox.hide();
             this._panelIslandActive = true;
+
+            // Reposition the island (left/center/right) and keep it in place as
+            // the panel or the indicators block changes width.
+            this._disconnectIslandSignals();
+            this._islandSignals = [];
+            const watch = (obj, sig) => {
+                if (obj)
+                    this._islandSignals.push([obj, obj.connect(sig, () => this._positionIsland())]);
+            };
+            watch(panel, 'notify::width');
+            watch(panel._rightBox, 'notify::width');
+            watch(Main.layoutManager, 'monitors-changed');
+            this._positionIsland();
+            this._connectIslandMenus();
         } catch (e) {
             logError(e, 'Dock Stack: panel island');
         }
+    }
+
+    // Center the indicator menus (Quick Settings, etc.) on the island bar, so
+    // they open under the pill wherever it is placed, instead of off to a side.
+    _connectIslandMenus() {
+        this._disconnectIslandMenus();
+        this._islandMenuIds = [];
+        const area = Main.panel.statusArea;
+        if (!area)
+            return;
+        const menus = [];
+        if (area.quickSettings && area.quickSettings.menu)
+            menus.push(area.quickSettings.menu);
+        for (const menu of menus) {
+            const id = menu.connect('open-state-changed', (_m, isOpen) => {
+                if (isOpen)
+                    this._recenterIslandMenu(menu);
+            });
+            this._islandMenuIds.push([menu, id]);
+        }
+    }
+
+    _recenterIslandMenu(menu) {
+        const bp = menu && menu._boxPointer;
+        const box = Main.panel && Main.panel._rightBox;
+        if (!bp || !box)
+            return;
+        // Defer so GNOME finishes its own positioning first, then re-anchor the
+        // arrow to the center of the island block.
+        GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+            if (this._panelIslandActive && menu.isOpen) {
+                try {
+                    bp.setPosition(box, 0.5);
+                } catch (_e) { /* ignore */ }
+            }
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _disconnectIslandMenus() {
+        if (!this._islandMenuIds)
+            return;
+        for (const [menu, id] of this._islandMenuIds) {
+            try {
+                menu.disconnect(id);
+            } catch (_e) { /* ignore */ }
+        }
+        this._islandMenuIds = [];
+    }
+
+    // Move the indicators "island" to the configured side. The panel always
+    // allocates the right box at the right edge, so we shift it with a
+    // horizontal translation (left/center) or leave it in place (right).
+    _positionIsland() {
+        if (!this._panelIslandActive)
+            return;
+        const panel = Main.panel;
+        const box = panel && panel._rightBox;
+        if (!box)
+            return;
+        const pos = this._settings.get_string('panel-island-position');
+        if (pos === 'right') {
+            box.translation_x = 0;   // the panel already pins it to the right
+            return;
+        }
+        const alloc = box.get_allocation_box();
+        const boxW = alloc.x2 - alloc.x1;
+        const curX = alloc.x1;            // untranslated left edge
+        if (boxW <= 0)
+            return;                       // not allocated yet; a later notify will retry
+        const panelW = panel.get_width();
+        const pad = 8;
+        const destX = pos === 'left'
+            ? pad
+            : Math.round((panelW - boxW) / 2);   // center
+        box.translation_x = Math.round(destX - curX);
+    }
+
+    _disconnectIslandSignals() {
+        if (!this._islandSignals)
+            return;
+        for (const [obj, id] of this._islandSignals) {
+            try {
+                obj.disconnect(id);
+            } catch (_e) { /* ignore */ }
+        }
+        this._islandSignals = [];
     }
 
     // Land on the desktop at login instead of the Activities overview. GNOME
@@ -568,6 +673,8 @@ export default class DockStacksExtension extends Extension {
     }
 
     _revertPanelIsland() {
+        this._disconnectIslandSignals();
+        this._disconnectIslandMenus();
         const panel = Main.panel;
         if (!panel) {
             this._panelIslandActive = false;
@@ -578,6 +685,7 @@ export default class DockStacksExtension extends Extension {
             if (panel._rightBox) {
                 panel._rightBox.remove_style_class_name('dock-panel-right-island');
                 panel._rightBox.set_style(null);   // clear inline background
+                panel._rightBox.translation_x = 0; // undo island positioning
             }
             if (panel._leftBox)
                 panel._leftBox.show();
@@ -790,6 +898,19 @@ export default class DockStacksExtension extends Extension {
 
         // The dock acts as the drop target for reordering
         this._dock._delegate = this;
+
+        // While the app grid is open, any press on a dock icon just dismisses
+        // the grid — it does NOT launch the app, open a stack/widget, or show a
+        // context menu. Capture phase so it runs before the item's own handlers,
+        // and we consume the event so nothing else reacts.
+        this._dock.connect('captured-event', (_a, ev) => {
+            if (this._appGridOverlay && !this._appGridClosing &&
+                ev.type() === Clutter.EventType.BUTTON_PRESS) {
+                this._closeAppGrid(true);
+                return Clutter.EVENT_STOP;
+            }
+            return Clutter.EVENT_PROPAGATE;
+        });
 
         this._dock.connect('notify::width', () => this._relayout());
         this._dock.connect('notify::height', () => this._relayout());
