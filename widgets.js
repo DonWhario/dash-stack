@@ -107,7 +107,7 @@ function makeWidgetGrid(spec, iconSize, _, lang, hooks) {
     case 'mpris': return makeMprisGrid(spec, _);
     case 'photos': return makePhotos(spec, iconSize, _, true);
     case 'chat': return makeChatGrid(spec, _, hooks);
-    case 'system': return makeSystem(spec, iconSize, _);
+    case 'system': return makeSystemGrid(spec, _);
     case 'script': return makeScript(spec, iconSize, _);
     default: return makePlaceholder(_);
     }
@@ -675,22 +675,284 @@ function resolveWeatherCoords(spec, hooks, cb) {
     });
 }
 
+// --- MeteoChile (Dirección Meteorológica de Chile) as an alternative source for
+// current conditions. Needs free DMC credentials (usuario + token). Values come
+// as strings with units ("11.4 °C", "1.0 kt", "1017.0 hPas"), so parse numbers.
+function mcNum(s) {
+    const m = /(-?\d+(?:[.,]\d+)?)/.exec(String(s == null ? '' : s));
+    return m ? parseFloat(m[1].replace(',', '.')) : null;
+}
+
+// Finds the national code of the DMC station nearest to lat/lon (public list).
+function meteochileNearest(session, lat, lon, cb) {
+    let msg;
+    try {
+        msg = Soup.Message.new('GET',
+            'https://climatologia.meteochile.gob.cl/application/servicios/getEstacionesRedEma');
+    } catch (_e) { cb(null); return; }
+    session.send_and_read_async(msg, GLib.PRIORITY_LOW, null, (s, res) => {
+        try {
+            const data = JSON.parse(new TextDecoder().decode(session.send_and_read_finish(res).get_data()));
+            const arr = data.datosEstacion || data.datosEstaciones || [];
+            let best = null, bestD = Infinity;
+            for (const e of arr) {
+                const la = parseFloat(e.latitud), lo = parseFloat(e.longitud);
+                if (isNaN(la) || isNaN(lo))
+                    continue;
+                const d = (la - lat) * (la - lat) + (lo - lon) * (lo - lon);
+                if (d < bestD) { bestD = d; best = e.codigoNacional; }
+            }
+            cb(best);
+        } catch (_e) { cb(null); }
+    });
+}
+
+// Fetches current conditions for a DMC station. cb({temp, hum, press, windKt}).
+function meteochileCurrent(session, user, token, codigo, cb) {
+    const url = 'https://climatologia.meteochile.gob.cl/application/servicios/getDatosRecientesEma/' +
+        `${codigo}?usuario=${encodeURIComponent(user)}&token=${encodeURIComponent(token)}`;
+    let msg;
+    try { msg = Soup.Message.new('GET', url); } catch (_e) { cb(null); return; }
+    session.send_and_read_async(msg, GLib.PRIORITY_LOW, null, (s, res) => {
+        try {
+            const data = JSON.parse(new TextDecoder().decode(session.send_and_read_finish(res).get_data()));
+            const node = data.datosEstaciones || data.datosEstacion || data;
+            const arr = node && node.datos;
+            const d = Array.isArray(arr) ? arr[0] : (node && node.valoresMasRecientes) || null;
+            if (!d) { cb(null); return; }
+            cb({
+                temp: mcNum(d.temperatura),
+                hum: mcNum(d.humedadRelativa),
+                press: mcNum(d.presionNivelDelMar != null ? d.presionNivelDelMar : d.presionEstacion),
+                windKt: mcNum(d.fuerzaDelViento != null ? d.fuerzaDelViento : d.velocidadDelViento),
+            });
+        } catch (_e) { cb(null); }
+    });
+}
+
 // Grid weather widget: the 5-day forecast card embedded in the app grid.
+// Weather card for the app-grid dashboard, laid out to match the mockup:
+// "Clima" header, location, big temp + icon, condition, wind/pressure stats,
+// and a 5-day forecast strip. (The single-click popup still uses forecastView.)
 function makeWeatherGrid(spec, _, hooks) {
     const rawCache = hooks && spec.id ? hooks.getCache(spec.id) : null;
     const cache = rawCache && typeof rawCache === 'object' ? rawCache : {};
     const loc = (spec.location || '').trim();
     const name = loc ? loc.split(',')[0].trim() : (cache.title || _('Clima'));
-    const v = forecastView(name, _, hooks, spec, 300);
+    const fc = cache.fc || null;
+    const now = GLib.DateTime.new_now_local();
+    const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
+    const container = new St.BoxLayout({style_class: 'dock-weather-card', orientation: Clutter.Orientation.VERTICAL});
+    container.set_width(300);
+
+    // Header: sun icon + "Clima"
+    const head = new St.BoxLayout({style_class: 'dock-weather-head'});
+    head.add_child(new St.Icon({
+        icon_name: 'weather-clear-symbolic', icon_size: 20,
+        style_class: 'dock-weather-head-icon', y_align: CENTER,
+    }));
+    head.add_child(new St.Label({style_class: 'dock-weather-title', text: _('Clima'), y_align: CENTER}));
+    container.add_child(head);
+
+    container.add_child(new St.Label({style_class: 'dock-weather-loc', text: name}));
+
+    const bigRow = new St.BoxLayout({style_class: 'dock-weather-bigrow'});
+    const bigTemp = new St.Label({
+        style_class: 'dock-weather-big',
+        text: (fc && fc.cur && fc.cur.temp) || '…', y_align: CENTER,
+    });
+    bigRow.add_child(bigTemp);
+    const condIcon = new St.Icon({
+        style_class: 'dock-weather-cond-icon',
+        icon_name: (fc && fc.cur && fc.cur.icon) || 'weather-clear-symbolic',
+        icon_size: 52, x_expand: true,
+        x_align: Clutter.ActorAlign.END, y_align: CENTER,
+    });
+    bigRow.add_child(condIcon);
+    container.add_child(bigRow);
+
+    const condLabel = new St.Label({
+        style_class: 'dock-weather-cond',
+        text: (fc && fc.cur && fc.cur.cond) || '',
+    });
+    container.add_child(condLabel);
+
+    container.add_child(new St.Widget({style_class: 'dock-weather-divider'}));
+
+    // Stats: wind + pressure (icon on top)
+    const stats = new St.BoxLayout({style_class: 'dock-weather-stats'});
+    const mkStat = (icon, val, label) => {
+        const col = new St.BoxLayout({
+            style_class: 'dock-weather-stat',
+            orientation: Clutter.Orientation.VERTICAL,
+            x_expand: true, x_align: Clutter.ActorAlign.CENTER,
+        });
+        col.add_child(new St.Icon({
+            icon_name: icon, icon_size: 18,
+            x_align: CENTER, style_class: 'dock-weather-stat-icon',
+        }));
+        const v = new St.Label({style_class: 'dock-weather-stat-val', text: val || '—', x_align: CENTER});
+        col.add_child(v);
+        col.add_child(new St.Label({style_class: 'dock-weather-stat-lbl', text: label, x_align: CENTER}));
+        stats.add_child(col);
+        return v;
+    };
+    const windL = mkStat('weather-windy-symbolic', fc && fc.cur && fc.cur.wind, _('Viento'));
+    const pressL = mkStat('daytime-sunset-symbolic', fc && fc.cur && fc.cur.press, _('Presión'));
+    container.add_child(stats);
+
+    container.add_child(new St.Label({
+        style_class: 'dock-weather-fc-title', text: _('Pronóstico de 5 días'),
+    }));
+
+    const daysBox = new St.BoxLayout({style_class: 'dock-weather-days'});
+    const dayRefs = [];
+    for (let i = 0; i < 5; i++) {
+        const dt = now.add_days(i);
+        const cd = fc && fc.days && fc.days[i];
+        const col = new St.BoxLayout({
+            style_class: 'dock-weather-day',
+            orientation: Clutter.Orientation.VERTICAL,
+            x_expand: true, x_align: Clutter.ActorAlign.CENTER,
+        });
+        col.add_child(new St.Label({
+            style_class: 'dock-weather-dname',
+            text: i === 0 ? _('Hoy') : cap(dt.format('%a')), x_align: CENTER,
+        }));
+        const di = new St.Icon({
+            icon_name: (cd && cd.icon) || 'weather-clear-symbolic', icon_size: 22,
+            x_align: CENTER, style_class: 'dock-weather-dicon',
+        });
+        col.add_child(di);
+        const dtemp = new St.Label({
+            style_class: 'dock-weather-dtemp', text: (cd && cd.max) || '…', x_align: CENTER,
+        });
+        col.add_child(dtemp);
+        daysBox.add_child(col);
+        dayRefs.push({di, dtemp});
+    }
+    container.add_child(daysBox);
+
+    // Small disclaimer / data-source attribution, bottom-right of the card.
+    const disclaimer = new St.Label({
+        style_class: 'dock-weather-disclaimer',
+        text: _('Fuente: Open-Meteo'),
+        x_expand: true,
+        x_align: Clutter.ActorAlign.END,
+    });
+    container.add_child(disclaimer);
+
+    // MeteoChile override of current temp/wind/pressure (optional source).
+    const useMc = spec.source === 'meteochile' && hooks &&
+        hooks.getDmcUser && hooks.getDmcToken &&
+        hooks.getDmcUser() && hooks.getDmcToken();
+    if (useMc)
+        disclaimer.text = _('Fuente: MeteoChile (DMC) · Open-Meteo');
+    let mcValues = null;
+    const applyMeteochile = (m) => {
+        if (!m)
+            return;
+        mcValues = m;
+        if (m.temp != null)
+            bigTemp.text = `${Math.round(m.temp)}°`;
+        if (m.windKt != null)
+            windL.text = `${Math.round(m.windKt * 1.852)} km/h`;   // knots → km/h
+        if (m.press != null)
+            pressL.text = `${Math.round(m.press)} hPa`;
+    };
+
+    const applyData = (d) => {
+        const cur = d.current;
+        const fcNew = {cur: {}, hours: [], days: []};
+        fcNew.cur.temp = `${Math.round(cur.temperature_2m)}°`;
+        fcNew.cur.icon = wmoIcon(cur.weather_code);
+        fcNew.cur.cond = wmoText(cur.weather_code, _);
+        fcNew.cur.wind = `${Math.round(cur.wind_speed_10m)} km/h`;
+        fcNew.cur.press = `${Math.round(cur.surface_pressure)} hPa`;
+        fcNew.cur.hum = `${Math.round(cur.relative_humidity_2m)} %`;
+        bigTemp.text = fcNew.cur.temp;
+        condIcon.icon_name = fcNew.cur.icon;
+        condLabel.text = fcNew.cur.cond;
+        windL.text = fcNew.cur.wind;
+        pressL.text = fcNew.cur.press;
+        const dd = d.daily;
+        for (let i = 0; i < dayRefs.length && i < dd.time.length; i++) {
+            const ic = wmoIcon(dd.weather_code[i]);
+            const mx = `${Math.round(dd.temperature_2m_max[i])}°`;
+            const mn = `${Math.round(dd.temperature_2m_min[i])}°`;
+            dayRefs[i].di.icon_name = ic;
+            dayRefs[i].dtemp.text = mx;
+            fcNew.days[i] = {icon: ic, max: mx, min: mn};
+        }
+        if (hooks && spec.id)
+            hooks.setCache(spec.id, {fc: fcNew});
+        if (mcValues)
+            applyMeteochile(mcValues);   // MeteoChile wins for current values
+    };
+
+    // Fetch current conditions from MeteoChile and override temp/wind/pressure
+    // (condition icon and 5-day forecast still come from open-meteo).
+    const runMeteochile = (lat, lon) => {
+        if (!useMc || lat == null || lon == null)
+            return;
+        const session = new Soup.Session();
+        container._mcSession = session;
+        const go = (codigo) => {
+            if (!codigo)
+                return;
+            meteochileCurrent(session, hooks.getDmcUser(), hooks.getDmcToken(), codigo, (m) => {
+                if (m && container.get_stage())
+                    applyMeteochile(m);
+            });
+        };
+        if (cache.dmcCode) {
+            go(cache.dmcCode);
+        } else {
+            meteochileNearest(session, lat, lon, (code) => {
+                if (code && hooks && spec.id)
+                    hooks.setCache(spec.id, {dmcCode: code});
+                go(code);
+            });
+        }
+    };
+
+    const fetchWx = (lat, lon) => {
+        if (lat == null || lon == null)
+            return;
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+            '&current=temperature_2m,weather_code,wind_speed_10m,surface_pressure,relative_humidity_2m' +
+            '&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=5&timezone=auto';
+        const session = new Soup.Session();
+        container._wSession = session;
+        let msg;
+        try { msg = Soup.Message.new('GET', url); } catch (_e) { return; }
+        session.send_and_read_async(msg, GLib.PRIORITY_DEFAULT, null, (s, res) => {
+            try {
+                const data = JSON.parse(new TextDecoder().decode(session.send_and_read_finish(res).get_data()));
+                applyData(data);
+            } catch (_e) { /* keep cached */ }
+        });
+    };
+
     if (cache.lat != null && cache.lon != null) {
-        v.update(cache.lat, cache.lon);
+        fetchWx(cache.lat, cache.lon);
+        runMeteochile(cache.lat, cache.lon);
     } else {
         resolveWeatherCoords(spec, hooks, (c) => {
-            if (c && v.container.get_stage())
-                v.update(c.lat, c.lon);
+            if (c && container.get_stage()) {
+                fetchWx(c.lat, c.lon);
+                runMeteochile(c.lat, c.lon);
+            }
         });
     }
-    return {actor: v.container, destroy() { /* session aborts on actor destroy */ }};
+
+    container.connect('destroy', () => {
+        try { if (container._wSession) container._wSession.abort(); } catch (_e) { /* ok */ }
+        try { if (container._mcSession) container._mcSession.abort(); } catch (_e) { /* ok */ }
+    });
+
+    return {actor: container, destroy() { /* session aborts on destroy */ }};
 }
 
 // Builds the month calendar (with GNOME Online Accounts events) as a reusable
@@ -1163,14 +1425,327 @@ function makeSystem(spec, iconSize, _) {
     };
 }
 
+// ---- Extra readers for the rich "Recursos del sistema" grid card ----
+function readRamFull() {
+    const t = readFile('/proc/meminfo');
+    const get = (k) => { const m = t.match(new RegExp(k + ':\\s+(\\d+)')); return m ? Number(m[1]) : 0; };
+    const totalKb = get('MemTotal');
+    const availKb = get('MemAvailable');
+    if (!totalKb)
+        return {pct: 0, usedGb: 0, totalGb: 0};
+    const usedKb = Math.max(0, totalKb - availKb);
+    return {
+        pct: Math.round((usedKb / totalKb) * 100),
+        usedGb: usedKb / 1048576,   // kB → GiB
+        totalGb: totalKb / 1048576,
+    };
+}
+
+function readDisk() {
+    try {
+        const info = Gio.File.new_for_path('/')
+            .query_filesystem_info('filesystem::size,filesystem::free', null);
+        const size = info.get_attribute_uint64('filesystem::size');
+        const free = info.get_attribute_uint64('filesystem::free');
+        if (!size)
+            return null;
+        const used = Math.max(0, size - free);
+        return {
+            pct: Math.round((used / size) * 100),
+            usedGb: used / 1073741824,
+            totalGb: size / 1073741824,
+        };
+    } catch (_e) { return null; }
+}
+
+function readNet() {
+    // Sum rx/tx bytes over every non-loopback interface.
+    const t = readFile('/proc/net/dev');
+    let rx = 0, tx = 0;
+    for (const line of t.split('\n')) {
+        const m = line.match(/^\s*([\w.@-]+):\s*(\d+)(?:\s+\d+){7}\s+(\d+)/);
+        if (!m || m[1] === 'lo')
+            continue;
+        rx += Number(m[2]);
+        tx += Number(m[3]);
+    }
+    return {rx, tx};
+}
+
+function readTemp() {
+    // Scan hwmon for a CPU-ish temperature input (value in millidegrees).
+    try {
+        const base = '/sys/class/hwmon';
+        const en = Gio.File.new_for_path(base)
+            .enumerate_children('standard::name', Gio.FileQueryInfoFlags.NONE, null);
+        let info, best = null;
+        while ((info = en.next_file(null))) {
+            const hw = base + '/' + info.get_name();
+            const name = readFile(hw + '/name').trim().toLowerCase();
+            for (let i = 1; i <= 8; i++) {
+                const v = readFile(hw + `/temp${i}_input`).trim();
+                if (v === '')
+                    continue;
+                const c = Number(v) / 1000;
+                if (!isFinite(c) || c <= 0 || c > 150)
+                    continue;
+                const label = readFile(hw + `/temp${i}_label`).trim().toLowerCase();
+                if (/package|tctl|tdie|cpu/.test(label) ||
+                    /coretemp|k10temp|zenpower|cpu/.test(name))
+                    return c;   // preferred CPU sensor
+                if (best === null)
+                    best = c;
+            }
+        }
+        return best;
+    } catch (_e) { return null; }
+}
+
+function readCpuInfo() {
+    const t = readFile('/proc/cpuinfo');
+    const cores = (t.match(/^processor\s*:/gm) || []).length || 1;
+    const m = t.match(/cpu MHz\s*:\s*([\d.]+)/);
+    return {cores, ghz: m ? Number(m[1]) / 1000 : 0};
+}
+
+function fmtRate(bps) {
+    if (bps >= 1048576)
+        return (bps / 1048576).toFixed(1) + ' MB/s';
+    if (bps >= 1024)
+        return Math.round(bps / 1024) + ' KB/s';
+    return Math.round(bps) + ' B/s';
+}
+
+// Rich "Recursos del sistema" card for the app grid: CPU/RAM rings, a CPU
+// history sparkline, a disk bar and three mini stats (net down/up, temp).
+function makeSystemGrid(spec, _) {
+    // The card fills its column width; the sparkline and disk bar follow the
+    // allocated width, so it adapts whether it sits in a 300px or 440px column.
+    const container = new St.BoxLayout({
+        style_class: 'dock-sys-grid', orientation: Clutter.Orientation.VERTICAL,
+        x_expand: true,
+    });
+
+    // Header: monitor icon + "Sistema" + live indicator.
+    const head = new St.BoxLayout({style_class: 'dock-sys-head'});
+    head.add_child(new St.Icon({
+        icon_name: 'utilities-system-monitor-symbolic', icon_size: 18,
+        style_class: 'dock-sys-head-icon', y_align: CENTER,
+    }));
+    head.add_child(new St.Label({
+        style_class: 'dock-sys-head-title', text: _('Sistema'),
+        x_expand: true, y_align: CENTER,
+    }));
+    const live = new St.BoxLayout({style_class: 'dock-sys-live', y_align: CENTER});
+    live.add_child(new St.Widget({style_class: 'dock-sys-live-dot', y_align: CENTER}));
+    live.add_child(new St.Label({style_class: 'dock-sys-live-txt', text: _('En vivo'), y_align: CENTER}));
+    head.add_child(live);
+    container.add_child(head);
+
+    // A circular gauge drawn with Cairo. Returns the area + a setter.
+    const RING = 84;   // ring diameter (compact)
+    const makeRing = (accent) => {
+        const area = new St.DrawingArea({style_class: 'dock-sys-ring'});
+        area.set_size(RING, RING);
+        let frac = 0;
+        area.connect('repaint', () => {
+            const cr = area.get_context();
+            const [w, h] = area.get_surface_size();
+            const cx = w / 2, cy = h / 2;
+            const lw = 9;
+            const r = Math.min(w, h) / 2 - lw / 2 - 1;
+            cr.setLineWidth(lw);
+            try { cr.setLineCap(1); } catch (_e) { /* round */ }
+            cr.setSourceRGBA(0.5, 0.5, 0.5, 0.18);
+            cr.arc(cx, cy, r, 0, 2 * Math.PI);
+            cr.stroke();
+            const f = Math.max(0, Math.min(1, frac));
+            if (f > 0) {
+                const start = -Math.PI / 2;
+                cr.setSourceRGBA(accent[0], accent[1], accent[2], 1);
+                cr.arc(cx, cy, r, start, start + f * 2 * Math.PI);
+                cr.stroke();
+            }
+            cr.$dispose();
+        });
+        return {area, set: (v) => { frac = v / 100; area.queue_repaint(); }};
+    };
+
+    const gaugeCell = (ring, unitText, labelText) => {
+        const cell = new St.BoxLayout({
+            style_class: 'dock-sys-gauge', orientation: Clutter.Orientation.VERTICAL,
+            x_expand: true, x_align: CENTER,
+        });
+        const stack = new St.Widget({layout_manager: new Clutter.BinLayout()});
+        stack.set_size(RING, RING);
+        stack.add_child(ring.area);
+        const ctr = new St.BoxLayout({
+            orientation: Clutter.Orientation.VERTICAL,
+            x_expand: true, y_expand: true, x_align: CENTER, y_align: CENTER,
+        });
+        const pct = new St.Label({style_class: 'dock-sys-ring-pct', text: '0', x_align: CENTER});
+        ctr.add_child(pct);
+        ctr.add_child(new St.Label({style_class: 'dock-sys-ring-unit', text: unitText, x_align: CENTER}));
+        stack.add_child(ctr);
+        cell.add_child(stack);
+        cell.add_child(new St.Label({style_class: 'dock-sys-gauge-lbl', text: labelText, x_align: CENTER}));
+        const sub = new St.Label({style_class: 'dock-sys-gauge-sub', text: '', x_align: CENTER});
+        cell.add_child(sub);
+        return {cell, pct, sub};
+    };
+
+    const cpuRing = makeRing([0.15, 0.39, 0.92]);   // blue
+    const ramRing = makeRing([0.49, 0.23, 0.93]);   // purple
+    const cpuG = gaugeCell(cpuRing, _('% CPU'), _('CPU'));
+    const ramG = gaugeCell(ramRing, _('% RAM'), _('Memoria'));
+    const gauges = new St.BoxLayout({style_class: 'dock-sys-gauges'});
+    gauges.add_child(cpuG.cell);
+    gauges.add_child(ramG.cell);
+    container.add_child(gauges);
+
+    // CPU history sparkline.
+    container.add_child(new St.Label({
+        style_class: 'dock-sys-spark-title', text: _('CPU · últimos 60 s'),
+    }));
+    const SAMPLES = 40;
+    const hist = new Array(SAMPLES).fill(0);
+    const spark = new St.DrawingArea({style_class: 'dock-sys-spark', x_expand: true});
+    spark.set_height(34);
+    spark.connect('repaint', () => {
+        const cr = spark.get_context();
+        const [w, h] = spark.get_surface_size();
+        const n = hist.length;
+        const px = (i) => (n > 1 ? (w * i) / (n - 1) : 0);
+        const py = (v) => h - (Math.max(0, Math.min(100, v)) / 100) * (h - 4) - 2;
+        cr.moveTo(0, h);
+        for (let i = 0; i < n; i++)
+            cr.lineTo(px(i), py(hist[i]));
+        cr.lineTo(w, h);
+        cr.closePath();
+        cr.setSourceRGBA(0.23, 0.51, 0.96, 0.16);
+        cr.fill();
+        cr.setLineWidth(2);
+        try { cr.setLineCap(1); cr.setLineJoin(1); } catch (_e) { /* round */ }
+        cr.setSourceRGBA(0.23, 0.51, 0.96, 0.95);
+        for (let i = 0; i < n; i++) {
+            if (i === 0) cr.moveTo(px(i), py(hist[i]));
+            else cr.lineTo(px(i), py(hist[i]));
+        }
+        cr.stroke();
+        cr.$dispose();
+    });
+    container.add_child(spark);
+
+    // Disk bar.
+    const diskRow = new St.BoxLayout({style_class: 'dock-sys-disk-row'});
+    diskRow.add_child(new St.Label({style_class: 'dock-sys-disk-lbl', text: _('Disco'), x_expand: true}));
+    const diskVal = new St.Label({style_class: 'dock-sys-disk-val', text: '—', x_align: Clutter.ActorAlign.END});
+    diskRow.add_child(diskVal);
+    container.add_child(diskRow);
+    const diskTrack = new St.BoxLayout({style_class: 'dock-sys-disk-track', x_expand: true});
+    const diskFill = new St.Widget({style_class: 'dock-sys-disk-fill'});
+    diskFill.set_width(0);
+    diskTrack.add_child(diskFill);
+    container.add_child(diskTrack);
+    // Keep the fill proportional to the (possibly changing) track width.
+    let diskFrac = 0;
+    const applyDisk = () => {
+        const tw = diskTrack.get_width();
+        if (tw > 0)
+            diskFill.set_width(Math.round(diskFrac * tw));
+    };
+    diskTrack.connect('notify::width', applyDisk);
+
+    // Three mini stats: net down / up / temperature.
+    const stats = new St.BoxLayout({style_class: 'dock-sys-stats'});
+    const mkStat = (label, cls) => {
+        const col = new St.BoxLayout({
+            style_class: 'dock-sys-stat', orientation: Clutter.Orientation.VERTICAL,
+            x_expand: true, x_align: CENTER,
+        });
+        col.add_child(new St.Label({style_class: 'dock-sys-stat-lbl', text: label, x_align: CENTER}));
+        const v = new St.Label({style_class: 'dock-sys-stat-val ' + cls, text: '—', x_align: CENTER});
+        col.add_child(v);
+        stats.add_child(col);
+        return v;
+    };
+    const dnV = mkStat(_('Red ↓'), 'dn');
+    const upV = mkStat(_('Red ↑'), 'up');
+    const tpV = mkStat(_('Temp'), 'tp');
+    container.add_child(stats);
+
+    // --- Live data ---
+    const info = readCpuInfo();
+    let lastCpu = readCpu();
+    let lastNet = readNet();
+    let lastT = GLib.get_monotonic_time();
+
+    const tick = () => {
+        // CPU
+        const c = readCpu();
+        const dt = c.total - lastCpu.total, di = c.idle - lastCpu.idle;
+        const cpu = dt > 0 ? Math.round((1 - di / dt) * 100) : 0;
+        lastCpu = c;
+        cpuRing.set(cpu);
+        cpuG.pct.text = String(cpu);
+        hist.push(cpu); hist.shift(); spark.queue_repaint();
+        const ghz = readCpuInfo().ghz;
+        cpuG.sub.text = `${info.cores} ${info.cores === 1 ? _('núcleo') : _('núcleos')}` +
+            (ghz ? ` · ${ghz.toFixed(1)} GHz` : '');
+
+        // RAM
+        const r = readRamFull();
+        ramRing.set(r.pct);
+        ramG.pct.text = String(r.pct);
+        ramG.sub.text = `${r.usedGb.toFixed(1)} / ${Math.round(r.totalGb)} GB`;
+
+        // Disk
+        const d = readDisk();
+        if (d) {
+            diskFrac = d.pct / 100;
+            applyDisk();
+            diskVal.text = `${Math.round(d.usedGb)} / ${Math.round(d.totalGb)} GB`;
+        }
+
+        // Network
+        const nowT = GLib.get_monotonic_time();
+        const secs = Math.max(0.1, (nowT - lastT) / 1e6);
+        const nn = readNet();
+        dnV.text = fmtRate(Math.max(0, (nn.rx - lastNet.rx) / secs));
+        upV.text = fmtRate(Math.max(0, (nn.tx - lastNet.tx) / secs));
+        lastNet = nn; lastT = nowT;
+
+        // Temperature
+        const tp = readTemp();
+        tpV.text = tp != null ? `${Math.round(tp)}°C` : '—';
+        return GLib.SOURCE_CONTINUE;
+    };
+    tick();
+    let timer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1500, tick);
+    const stop = () => { if (timer) { GLib.source_remove(timer); timer = 0; } };
+    container.connect('destroy', stop);
+
+    return {actor: container, destroy: stop};
+}
+
 function makeClock(spec, iconSize, _) {
     const box = card('dock-widget-clock');
-    if (vividWidgets) {
-        box.add_style_class_name('vivid');
-        box.set_style(vividGradient('clock'));
-    } else {
-        setCardBg(box, 'reloj.png');
-    }
+    // Background: same color/opacity as the dock (spec.dockStyle), a vivid
+    // gradient, or the default image. applyBg re-runs when the dock opacity
+    // changes so the "dock style" stays in sync.
+    const applyBg = () => {
+        if (spec.dockStyle) {
+            box.remove_style_class_name('vivid');
+            box.set_style(`background-color: rgba(30,30,30,${dockOpacity.toFixed(2)});`);
+        } else if (vividWidgets) {
+            box.add_style_class_name('vivid');
+            box.set_style(vividGradient('clock'));
+        } else {
+            box.remove_style_class_name('vivid');
+            setCardBg(box, 'reloj.png');
+        }
+    };
+    applyBg();
     const info = new St.BoxLayout({style_class: 'dock-widget-text', orientation: Clutter.Orientation.VERTICAL, y_align: CENTER});
     const big = new St.Label({style_class: 'dock-widget-time'});
     const sub = new St.Label({style_class: 'dock-widget-sub'});
@@ -1198,6 +1773,7 @@ function makeClock(spec, iconSize, _) {
 
     return {
         actor: box,
+        applyStyle: applyBg,   // re-apply dock color/opacity when it changes
         destroy() { if (timer) GLib.source_remove(timer); },
     };
 }
@@ -1735,10 +2311,73 @@ function downloadAndCrop(session, imgUrl, base, size, icon) {
 // Shows a thumbnail for an article: prefers the feed's direct image; if none,
 // fetches the article page and extracts its og:image. Keyed/cached by the
 // article URL, so re-opens reuse the cropped thumbnail.
+// Google News changed its RSS links to an encrypted token ("AU_yqL…") that no
+// longer embeds the article URL, so decodeGoogleNewsUrl can't read it. The real
+// URL is obtained from Google's "batchexecute" endpoint: GET the article page to
+// read its signature/timestamp, then POST a "garturlreq" to resolve the URL.
+// Results are cached per token so each article resolves at most once per session.
+const _gnResolveCache = new Map();   // token -> real url ('' = tried & failed)
+
+function resolveGoogleNewsUrl(session, gnUrl, cb) {
+    const tm = /\/articles\/([^?/]+)/.exec(gnUrl || '');
+    if (!tm) { cb(''); return; }
+    const token = tm[1];
+    if (_gnResolveCache.has(token)) { cb(_gnResolveCache.get(token)); return; }
+    const fail = () => { _gnResolveCache.set(token, ''); cb(''); };
+    let msg;
+    try { msg = Soup.Message.new('GET', gnUrl); } catch (_e) { fail(); return; }
+    try { msg.request_headers.append('User-Agent', 'Mozilla/5.0'); } catch (_e) { /* ok */ }
+    session.send_and_read_async(msg, GLib.PRIORITY_LOW, null, (s, res) => {
+        let html = '';
+        try { html = new TextDecoder().decode(session.send_and_read_finish(res).get_data()); }
+        catch (_e) { fail(); return; }
+        const sg = /data-n-a-sg="([^"]+)"/.exec(html);
+        const ts = /data-n-a-ts="([^"]+)"/.exec(html);
+        if (!sg || !ts) {
+            log('Dock Stack news: no se pudo leer firma/ts de Google News (formato cambiado?)');
+            fail();
+            return;
+        }
+        const inner = JSON.stringify(['garturlreq',
+            [['X', 'X', ['X', 'X'], null, null, 1, 1, 'US:en', null, 1, null, null, null, null, null, 0, 1],
+                'X', 'X', 1, [1, 1, 1], 1, 1, null, 0, 0, null, 0],
+            token, Number(ts[1]), sg[1]]);
+        const freq = JSON.stringify([[['Fbv4je', inner, null, 'generic']]]);
+        let post;
+        try { post = Soup.Message.new('POST', 'https://news.google.com/_/DotsSplashUi/data/batchexecute'); }
+        catch (_e) { fail(); return; }
+        try {
+            const body = new GLib.Bytes(new TextEncoder().encode('f.req=' + encodeURIComponent(freq)));
+            post.set_request_body_from_bytes('application/x-www-form-urlencoded;charset=UTF-8', body);
+        } catch (_e) { fail(); return; }
+        session.send_and_read_async(post, GLib.PRIORITY_LOW, null, (s2, res2) => {
+            let txt = '';
+            try { txt = new TextDecoder().decode(session.send_and_read_finish(res2).get_data()); }
+            catch (_e) { fail(); return; }
+            let real = '';
+            const um = /\\"garturlres\\",\\"(https?:(?:[^"\\]|\\.)+?)\\"/.exec(txt);
+            if (um) {
+                try { real = JSON.parse(`"${um[1]}"`); } catch (_e) { real = um[1]; }
+            }
+            if (!real)
+                log('Dock Stack news: batchexecute no devolvió URL (revisar protocolo)');
+            _gnResolveCache.set(token, real);
+            cb(real);
+        });
+    });
+}
+
 function loadNewsThumb(session, articleUrl, directImg, icon, size) {
-    // Google News links are redirects whose og:image is the generic GN logo;
-    // without a direct image there's nothing useful to show.
-    if (!directImg && (!articleUrl || articleUrl.includes('news.google.com')))
+    // Google News redirect link with no direct image → resolve the real article
+    // URL first (see resolveGoogleNewsUrl), then load its og:image.
+    if (!directImg && articleUrl && articleUrl.includes('news.google.com')) {
+        resolveGoogleNewsUrl(session, articleUrl, (real) => {
+            if (real && !real.includes('news.google.com'))
+                loadNewsThumb(session, real, null, icon, size);
+        });
+        return;
+    }
+    if (!directImg && !articleUrl)
         return;
     const base = newsImageBase(articleUrl || directImg || '');
     const sq = `${base}.sq${size}.png`;
@@ -1817,10 +2456,20 @@ function makeNewsGrid(spec, _, hooks) {
 
     const container = new St.BoxLayout({style_class: 'dock-newsfeed', orientation: Clutter.Orientation.VERTICAL});
     container.set_width(440);
-    container.add_child(new St.Label({
+    const headRow = new St.BoxLayout({style_class: 'dock-newsfeed-head'});
+    headRow.add_child(new St.Label({
         style_class: 'dock-newsfeed-title',
-        text: `${_('Noticias')} · ${c.name}`,
+        text: `${_('Noticias')} • ${c.name}`,
+        x_expand: true, y_align: CENTER,
     }));
+    const moreBtn = new St.Button({
+        style_class: 'dock-newsfeed-more',
+        child: new St.Icon({icon_name: 'view-more-symbolic', icon_size: 18}),
+        y_align: CENTER,
+    });
+    moreBtn.connect('clicked', () => fetchGoogle());   // refresh
+    headRow.add_child(moreBtn);
+    container.add_child(headRow);
     const scroll = new St.ScrollView({style_class: 'dock-newsfeed-scroll', y_expand: true});
     scroll.set_policy(St.PolicyType.NEVER, St.PolicyType.AUTOMATIC);
     const list = new St.BoxLayout({style_class: 'dock-newsfeed-list', orientation: Clutter.Orientation.VERTICAL});
@@ -1866,18 +2515,18 @@ function makeNewsGrid(spec, _, hooks) {
             const vb = new St.BoxLayout({
                 orientation: Clutter.Orientation.VERTICAL, x_expand: true, x_align: Clutter.ActorAlign.FILL,
             });
-            const meta = new St.BoxLayout({style_class: 'dock-newsfeed-meta'});
-            meta.add_child(new St.Label({
+            vb.add_child(new St.Label({
                 style_class: 'dock-newsfeed-source', text: it.source || _('Noticias'),
             }));
-            const age = it.gdelt ? gdeltAge(it.date) : relativeAge(it.date, _);
-            if (age)
-                meta.add_child(new St.Label({style_class: 'dock-newsfeed-age', text: `  ·  ${age}`}));
-            vb.add_child(meta);
             const h = new St.Label({style_class: 'dock-newsfeed-headline', text: it.title});
             h.clutter_text.set_line_wrap(true);
             h.clutter_text.set_ellipsize(0 /* NONE: wrap instead of cutting */);
             vb.add_child(h);
+            const age = it.gdelt ? gdeltAge(it.date) : relativeAge(it.date, _);
+            if (age)
+                vb.add_child(new St.Label({
+                    style_class: 'dock-newsfeed-age', text: `${_('Hace')} ${age}`,
+                }));
             row.add_child(vb);
             cardBtn.set_child(row);
             const openUrl = realUrl || it.link;
@@ -1952,12 +2601,29 @@ function makeMprisGrid(spec, _) {
     const container = new St.BoxLayout({style_class: 'dock-mpris-grid', orientation: Clutter.Orientation.VERTICAL});
     container.set_width(300);
 
+    // Header (sits like the weather/news cards): note icon + "Reproduciendo".
+    const head = new St.BoxLayout({style_class: 'dock-mpris-grid-head'});
+    head.add_child(new St.Icon({
+        icon_name: 'audio-headphones-symbolic', icon_size: 18,
+        style_class: 'dock-mpris-grid-head-icon', y_align: CENTER,
+    }));
+    head.add_child(new St.Label({
+        style_class: 'dock-mpris-grid-head-title', text: _('Reproduciendo'),
+        y_align: CENTER,
+    }));
+    container.add_child(head);
+
     const art = new St.Icon({
         style_class: 'dock-mpris-grid-art',
         icon_name: 'audio-x-generic-symbolic',
-        icon_size: 128,
+        icon_size: 72,
     });
-    container.add_child(new St.Bin({x_align: CENTER, child: art}));
+    // The art sits in a vertically-expanding bin so it absorbs any slack (or
+    // squeeze) in the card height. This keeps the title/progress/controls — and
+    // the rounded bottom — always in place when the card fills the column.
+    container.add_child(new St.Bin({
+        x_align: CENTER, y_align: CENTER, y_expand: true, child: art,
+    }));
 
     const title = new St.Label({style_class: 'dock-mpris-grid-title', x_align: CENTER});
     title.clutter_text.set_ellipsize(3);

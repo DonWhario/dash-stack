@@ -104,29 +104,35 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             margin_end: 12,
         });
 
-        // Image
-        const imgPath = '/home/fabarcad/Imágenes/Icon/abaza.jpg';
-        if (GLib.file_test(imgPath, GLib.FileTest.EXISTS)) {
-            const pic = Gtk.Picture.new_for_filename(imgPath);
-            pic.set_can_shrink(true);
-            pic.set_content_fit(Gtk.ContentFit.CONTAIN);
-            pic.set_size_request(240, 300);
-            pic.add_css_class('card');
-            box.append(pic);
-        }
-
-        // Text lines
-        const l1 = new Gtk.Label({
-            label: _('Aplicaciones y Utilitarios'),
-            css_classes: ['title-2'],
-        });
-        box.append(l1);
-
-        const l2 = new Gtk.Label({
-            label: 'ABAZA',
+        // Title
+        box.append(new Gtk.Label({
+            label: 'Dock Stack',
             css_classes: ['title-1'],
+        }));
+
+        // README summary
+        const summary = new Gtk.Label({
+            label: _('Dock inferior para GNOME Shell con agrupaciones de ' +
+                'aplicaciones estilo macOS (stacks) que se abren como grilla o ' +
+                'abanico, una grilla de aplicaciones propia (Launchpad) con ' +
+                'categorías, búsqueda y tema claro/oscuro, barra de tareas con ' +
+                'las apps en ejecución y bandeja del sistema (systray) en la ' +
+                'barra superior. Incluye auto-ocultado e intellihide, iconos ' +
+                'animados, widgets (clima, noticias, reloj) e interfaz ' +
+                'multilingüe.'),
+            wrap: true,
+            justify: Gtk.Justification.CENTER,
+            max_width_chars: 52,
+            css_classes: ['body'],
         });
-        box.append(l2);
+        box.append(summary);
+
+        // GitHub link
+        box.append(new Gtk.LinkButton({
+            label: _('Proyecto en GitHub'),
+            uri: 'https://github.com/DonWhario/dash-stack',
+            halign: Gtk.Align.CENTER,
+        }));
 
         group.add(box);
     }
@@ -291,6 +297,14 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         });
         settings.bind('hover-shake', shakeRow, 'active', Gio.SettingsBindFlags.DEFAULT);
         group.add(shakeRow);
+
+        // Animated icons (GIF/APNG) for stacks and the apps button
+        const animRow = new Adw.SwitchRow({
+            title: _('Iconos animados'),
+            subtitle: _('Reproduce iconos GIF/APNG/WebP en los stacks y el botón de aplicaciones (cuando el icono es un archivo animado)'),
+        });
+        settings.bind('animated-icons', animRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+        group.add(animRow);
 
         // No overview at startup
         const noOvRow = new Adw.SwitchRow({
@@ -478,14 +492,8 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         });
         appsGroup.add(themeRow);
 
-        // Opacity of the grid inner frames
-        const gridOpRow = new Adw.SpinRow({
-            title: _('Opacidad de la rejilla (%)'),
-            subtitle: _('Transparencia de los marcos interiores (categorías y apps)'),
-            adjustment: new Gtk.Adjustment({lower: 0, upper: 100, step_increment: 5, value: settings.get_int('appgrid-opacity')}),
-        });
-        settings.bind('appgrid-opacity', gridOpRow, 'value', Gio.SettingsBindFlags.DEFAULT);
-        appsGroup.add(gridOpRow);
+        // (The grid opacity is unified with the dock/island via "Opacidad del
+        // fondo del dock"; no separate grid-opacity control.)
 
         // Custom icon (icon name or file path)
         const iconEntryRow = new Adw.EntryRow({title: _('Icono (nombre o ruta)')});
@@ -508,14 +516,15 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         settings.connect('changed::apps-button-icon', refreshPreview);
         iconEntryRow.add_prefix(preview);
 
-        // Button to choose an image file
+        // Button to choose an image file (static or animated GIF/APNG/WebP)
         const pickIconBtn = new Gtk.Button({icon_name: 'document-open-symbolic', valign: Gtk.Align.CENTER, css_classes: ['flat']});
-        pickIconBtn.set_tooltip_text(_('Elegir archivo de imagen…'));
+        pickIconBtn.set_tooltip_text(_('Elegir imagen o GIF animado…'));
         pickIconBtn.connect('clicked', () => {
             const dialog = new Gtk.FileDialog({title: _('Elegir icono')});
             const filter = new Gtk.FileFilter();
-            filter.set_name(_('Imágenes'));
-            ['image/png', 'image/svg+xml', 'image/jpeg', 'image/x-icon'].forEach(m => filter.add_mime_type(m));
+            filter.set_name(_('Imágenes y animados (GIF/APNG/WebP)'));
+            ['image/png', 'image/svg+xml', 'image/jpeg', 'image/x-icon',
+                'image/gif', 'image/webp', 'image/apng'].forEach(m => filter.add_mime_type(m));
             dialog.set_default_filter(filter);
             dialog.open(window, null, (dlg, res) => {
                 try {
@@ -786,7 +795,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         const specs = [
             ['mpris', _('Añadir: Reproduciendo ahora'), _('Controles de música/vídeo (MPRIS)'), 'audio-x-generic-symbolic'],
             ['weather', _('Añadir: Clima'), _('Temperatura y condición (automático)'), 'weather-clear-symbolic'],
-            ['system', _('Añadir: Sistema'), _('CPU, RAM y batería con mini gráfico'), 'utilities-system-monitor-symbolic'],
+            ['system', _('Añadir: Sistema'), _('CPU, RAM, disco, red y temperatura (solo grilla)'), 'utilities-system-monitor-symbolic'],
             ['clock', _('Añadir: Reloj'), _('Hora y fecha'), 'preferences-system-time-symbolic'],
             ['news', _('Añadir: Noticias'), _('Titulares por país (Google News)'), 'application-rss+xml-symbolic'],
             ['photos', _('Añadir: Fotos'), _('Pase de fotos del sistema en formato Polaroid'), 'image-x-generic-symbolic'],
@@ -884,6 +893,30 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             exp.add_row(new Adw.ActionRow({
                 subtitle: _('Incluye el país, p. ej. «Santiago, Chile». Si lo dejas vacío, se detecta por tu conexión.'),
             }));
+
+            // Weather data source: Open-Meteo (default) or MeteoChile (DMC).
+            const srcModel = new Gtk.StringList();
+            [_('Open-Meteo'), _('MeteoChile (DMC)')].forEach(s => srcModel.append(s));
+            const srcKeys = ['open-meteo', 'meteochile'];
+            const srcRow = new Adw.ComboRow({
+                title: _('Fuente del clima'),
+                subtitle: _('MeteoChile usa estaciones oficiales de Chile (temperatura/viento/presión)'),
+                model: srcModel,
+                selected: Math.max(0, srcKeys.indexOf(w.source || 'open-meteo')),
+            });
+            srcRow.connect('notify::selected',
+                () => this._updateWidget(w.id, {source: srcKeys[srcRow.selected]}));
+            exp.add_row(srcRow);
+
+            const dmcUser = new Adw.EntryRow({title: _('MeteoChile: usuario (correo)')});
+            this._settings.bind('weather-dmc-user', dmcUser, 'text', Gio.SettingsBindFlags.DEFAULT);
+            exp.add_row(dmcUser);
+            const dmcTok = new Adw.PasswordEntryRow({title: _('MeteoChile: token (API key)')});
+            this._settings.bind('weather-dmc-token', dmcTok, 'text', Gio.SettingsBindFlags.DEFAULT);
+            exp.add_row(dmcTok);
+            exp.add_row(new Adw.ActionRow({
+                subtitle: _('Regístrate gratis en los Servicios Climáticos de meteochile.gob.cl para obtener usuario y token. La estación más cercana se elige automáticamente.'),
+            }));
         } else if (w.type === 'script') {
             const cmd = new Adw.EntryRow({title: _('Comando')});
             cmd.set_text(w.command || '');
@@ -906,18 +939,10 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             wd.connect('notify::value', () => this._updateWidget(w.id, {width: Math.round(wd.get_value())}));
             exp.add_row(wd);
         } else if (w.type === 'system') {
-            const fields = Object.assign({cpu: true, ram: true, battery: true}, w.fields || {});
-            const mk = (key, title) => {
-                const sw = new Adw.SwitchRow({title, active: !!fields[key]});
-                sw.connect('notify::active', () => {
-                    fields[key] = sw.get_active();
-                    this._updateWidget(w.id, {fields: Object.assign({}, fields)});
-                });
-                exp.add_row(sw);
-            };
-            mk('cpu', _('CPU (gráfico)'));
-            mk('ram', _('RAM'));
-            mk('battery', _('Batería'));
+            exp.add_row(new Adw.ActionRow({
+                subtitle: _('Muestra automáticamente CPU, RAM, disco, red y temperatura. ' +
+                    'Solo disponible en la grilla.'),
+            }));
         } else if (w.type === 'clock') {
             const sw24 = new Adw.SwitchRow({title: _('Formato 24 horas'), active: w.format24 !== false});
             sw24.connect('notify::active', () => this._updateWidget(w.id, {format24: sw24.get_active()}));
@@ -925,6 +950,13 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             const swDate = new Adw.SwitchRow({title: _('Mostrar fecha'), active: w.showDate !== false});
             swDate.connect('notify::active', () => this._updateWidget(w.id, {showDate: swDate.get_active()}));
             exp.add_row(swDate);
+            const swDock = new Adw.SwitchRow({
+                title: _('Mismo color y opacidad que el dock'),
+                subtitle: _('Usa el fondo del dock en vez de la imagen'),
+                active: !!w.dockStyle,
+            });
+            swDock.connect('notify::active', () => this._updateWidget(w.id, {dockStyle: swDock.get_active()}));
+            exp.add_row(swDock);
         } else if (w.type === 'news') {
             const codes = ['CL', 'AR', 'MX', 'PE', 'CO', 'ES', 'US', 'GB', 'BR', 'FR', 'DE', 'IT'];
             const labels = ['Chile', 'Argentina', 'México', 'Perú', 'Colombia', 'España',
@@ -1017,9 +1049,9 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             exp.add_row(new Adw.ActionRow({subtitle: _('Sin ajustes. Controla el reproductor activo.')}));
         }
 
-        // Where the widget is shown. Music/news/photos are grid-only; weather,
-        // system and clock can choose dock or the menu grid.
-        const GRID_ONLY = ['mpris', 'news', 'photos', 'chat'];
+        // Where the widget is shown. Music/news/photos/system are grid-only;
+        // weather and clock can choose dock or the menu grid.
+        const GRID_ONLY = ['mpris', 'news', 'photos', 'chat', 'system'];
         if (GRID_ONLY.includes(w.type)) {
             exp.add_row(new Adw.ActionRow({
                 subtitle: _('Este widget solo se muestra en la grilla de menú (en Favoritos, al final).'),
@@ -1048,8 +1080,6 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             w.location = 'Santiago, Chile';
         else if (type === 'script')
             Object.assign(w, {command: '', label: '', interval: 10, width: 180});
-        else if (type === 'system')
-            w.fields = {cpu: true, ram: true, battery: true};
         else if (type === 'clock')
             Object.assign(w, {format24: true, showDate: true});
         else if (type === 'news')
@@ -1216,8 +1246,8 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         nameRow.set_text(stack.name || '');
         group.add(nameRow);
 
-        // Dock icon (customizable)
-        const iconRow = new Adw.EntryRow({title: _('Icono en el dock (nombre o ruta; vacío = automático)')});
+        // Dock icon (customizable; accepts animated GIF/APNG/WebP too)
+        const iconRow = new Adw.EntryRow({title: _('Icono en el dock (nombre, ruta o GIF; vacío = automático)')});
         iconRow.set_text(stack.icon || '');
         const preview = new Gtk.Image({pixel_size: 24, valign: Gtk.Align.CENTER});
         const refreshPrev = () => {
@@ -1235,12 +1265,13 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         iconRow.connect('changed', refreshPrev);
         iconRow.add_prefix(preview);
         const pickBtn = new Gtk.Button({icon_name: 'document-open-symbolic', valign: Gtk.Align.CENTER, css_classes: ['flat']});
-        pickBtn.set_tooltip_text(_('Elegir archivo de imagen…'));
+        pickBtn.set_tooltip_text(_('Elegir imagen o GIF animado…'));
         pickBtn.connect('clicked', () => {
             const d = new Gtk.FileDialog({title: _('Elegir icono')});
             const filter = new Gtk.FileFilter();
-            filter.set_name(_('Imágenes'));
-            ['image/png', 'image/svg+xml', 'image/jpeg', 'image/x-icon'].forEach(m => filter.add_mime_type(m));
+            filter.set_name(_('Imágenes y animados (GIF/APNG/WebP)'));
+            ['image/png', 'image/svg+xml', 'image/jpeg', 'image/x-icon',
+                'image/gif', 'image/webp', 'image/apng'].forEach(m => filter.add_mime_type(m));
             d.set_default_filter(filter);
             d.open(win, null, (dlg, res) => {
                 try {

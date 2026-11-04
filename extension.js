@@ -10,6 +10,9 @@ import GLib from 'gi://GLib';
 import Shell from 'gi://Shell';
 import Meta from 'gi://Meta';
 import Mtk from 'gi://Mtk';
+import AccountsService from 'gi://AccountsService';
+import GdkPixbuf from 'gi://GdkPixbuf';
+import Cogl from 'gi://Cogl';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as AppFavorites from 'resource:///org/gnome/shell/ui/appFavorites.js';
@@ -39,19 +42,80 @@ function safeParseStacks(str) {
 // Widgets share the same JSON-array shape as stacks.
 const safeParseWidgets = safeParseStacks;
 
-// Where a widget is shown. Music (mpris), news and photos are grid-only; the
-// rest (weather, system, clock) default to the dock and can opt into the grid
-// via spec.place = 'grid'.
+// Where a widget is shown. Music (mpris), news, photos, chat and the system
+// monitor are grid-only; the rest (weather, clock) default to the dock and can
+// opt into the grid via spec.place = 'grid'.
 function widgetPlace(w) {
     if (!w)
         return 'dock';
-    if (w.type === 'mpris' || w.type === 'news' || w.type === 'photos' || w.type === 'chat')
+    if (w.type === 'mpris' || w.type === 'news' || w.type === 'photos' ||
+        w.type === 'chat' || w.type === 'system')
         return 'grid';
     return w.place === 'grid' ? 'grid' : 'dock';
 }
 
 function iconForGicon(gicon, size) {
     return new St.Icon({gicon, icon_size: size});
+}
+
+// Animated icons (GIF/APNG/WebP) for items with a custom icon file (stacks,
+// apps button). Read live so the toggle applies on rebuild.
+let animatedIcons = true;
+function setAnimatedIcons(b) { animatedIcons = !!b; }
+
+// Returns an actor that plays an animated image file, or null when the path is
+// not a local animated image (so callers fall back to a normal St.Icon).
+function makeAnimatedIcon(path, size) {
+    if (!animatedIcons || !path)
+        return null;
+    let file = path;
+    if (file.startsWith('file://')) {
+        try { file = GLib.filename_from_uri(file)[0]; } catch (_e) { return null; }
+    }
+    if (!GLib.file_test(file, GLib.FileTest.EXISTS))
+        return null;   // icon name / theme icon → not animatable here
+    let anim;
+    try {
+        anim = GdkPixbuf.PixbufAnimation.new_from_file(file);
+    } catch (_e) {
+        return null;
+    }
+    if (!anim || anim.is_static_image())
+        return null;   // a plain still image → let St.Icon handle it
+
+    const widget = new St.Widget({width: size, height: size, style_class: 'dock-animated-icon'});
+    widget.set_content_gravity(Clutter.ContentGravity.RESIZE_ASPECT);
+    const coglContext = global.stage.context.get_backend().get_cogl_context();
+    const iter = anim.get_iter(null);
+    let timer = 0;
+
+    const showFrame = (pb0) => {
+        try {
+            const pb = pb0.get_has_alpha() ? pb0 : pb0.add_alpha(false, 0, 0, 0);
+            const content = St.ImageContent.new_with_preferred_size(pb.get_width(), pb.get_height());
+            content.set_bytes(coglContext, pb.read_pixel_bytes(),
+                Cogl.PixelFormat.RGBA_8888, pb.get_width(), pb.get_height(), pb.get_rowstride());
+            widget.set_content(content);
+        } catch (_e) { /* skip this frame */ }
+    };
+    const schedule = () => {
+        let delay = iter.get_delay_time();
+        if (delay < 0)
+            return;   // reached a static end
+        delay = Math.max(30, delay);
+        timer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, delay, () => {
+            iter.advance(null);
+            showFrame(iter.get_pixbuf());
+            schedule();
+            return GLib.SOURCE_REMOVE;
+        });
+    };
+    showFrame(iter.get_pixbuf());
+    schedule();
+    widget.connect('destroy', () => {
+        if (timer) { GLib.source_remove(timer); timer = 0; }
+    });
+    return widget;
 }
 
 // "Shiver" (trembling) animation on hover. Toggled by the 'hover-shake'
@@ -204,6 +268,7 @@ export default class DockStacksExtension extends Extension {
         setDockOpacity(this._settings.get_int('background-opacity') / 100);
         setVividWidgets(this._settings.get_boolean('vivid-widgets'));
         setHoverShake(this._settings.get_boolean('hover-shake'));
+        setAnimatedIcons(this._settings.get_boolean('animated-icons'));
         this._stackOverlay = null;
         this._stackPopup = null;
         this._stackGrab = null;
@@ -247,6 +312,12 @@ export default class DockStacksExtension extends Extension {
 
         // React to settings changes
         this._settingsChangedId = this._settings.connect('changed', (_s, key) => {
+            // Our own drag-reorder write: the grid re-renders itself, so skip the
+            // full rebuild (which would close the open app grid).
+            if (key === 'widgets' && this._skipWidgetsRebuild) {
+                this._skipWidgetsRebuild = false;
+                return;
+            }
             if (key === 'stacks' || key === 'widgets' || key === 'show-favorites' ||
                 key === 'icon-size' || key === 'show-apps-button' ||
                 key === 'apps-button-icon' || key === 'apps-button-position' ||
@@ -259,8 +330,12 @@ export default class DockStacksExtension extends Extension {
                 this._closeAppGrid();
                 this._rebuildItems();
             }
-            else if (key === 'position' || key === 'background-opacity')
+            else if (key === 'position')
                 this._applyStyle();
+            else if (key === 'background-opacity') {
+                this._applyStyle();            // dock + island
+                this._applyAppGridSurface();   // and the app grid (same opacity)
+            }
             else if (key === 'autohide' || key === 'intellihide')
                 this._applyAutohide();
             else if (key === 'immersive-fullscreen')
@@ -278,10 +353,16 @@ export default class DockStacksExtension extends Extension {
             }
             else if (key === 'hover-shake')
                 setHoverShake(this._settings.get_boolean('hover-shake'));
+            else if (key === 'animated-icons') {
+                setAnimatedIcons(this._settings.get_boolean('animated-icons'));
+                this._rebuildItems();
+            }
             else if (key === 'panel-island')
                 this._applyPanelIsland();
             else if (key === 'panel-island-position')
                 this._positionIsland();
+            else if (key === 'appgrid-theme')
+                this._applyAppGridSurface();   // live if the grid is open
         });
 
         // React to favorites / installed-apps changes
@@ -561,18 +642,13 @@ export default class DockStacksExtension extends Extension {
         }
     }
 
-    // Center the indicator menus (Quick Settings, etc.) on the island bar, so
-    // they open under the pill wherever it is placed, instead of off to a side.
+    // Center every panel indicator menu (Quick Settings, WiFi, battery, system
+    // usage, notifications, …) on the island bar, so they open under the pill
+    // wherever it is placed instead of off to a side.
     _connectIslandMenus() {
         this._disconnectIslandMenus();
         this._islandMenuIds = [];
-        const area = Main.panel.statusArea;
-        if (!area)
-            return;
-        const menus = [];
-        if (area.quickSettings && area.quickSettings.menu)
-            menus.push(area.quickSettings.menu);
-        for (const menu of menus) {
+        for (const menu of this._collectPanelMenus()) {
             const id = menu.connect('open-state-changed', (_m, isOpen) => {
                 if (isOpen)
                     this._recenterIslandMenu(menu);
@@ -581,21 +657,57 @@ export default class DockStacksExtension extends Extension {
         }
     }
 
+    // Gather every panel indicator menu with an arrow/box-pointer, from the
+    // registered status area AND from the panel boxes directly (some extensions
+    // add their indicator to a box without registering it in statusArea).
+    _collectPanelMenus() {
+        const menus = new Set();
+        const panel = Main.panel;
+        const add = (obj) => {
+            const m = obj && obj.menu;
+            if (m && typeof m.connect === 'function' && m._boxPointer)
+                menus.add(m);
+        };
+        const area = panel.statusArea;
+        if (area) {
+            for (const key in area) {
+                try {
+                    add(area[key]);
+                } catch (_e) { /* ignore */ }
+            }
+        }
+        for (const box of [panel._leftBox, panel._centerBox, panel._rightBox]) {
+            if (!box)
+                continue;
+            for (const child of box.get_children()) {
+                // The indicator may be the child, its delegate, or its first
+                // descendant (PanelMenu.Button wrapped in its container).
+                add(child);
+                add(child._delegate);
+                if (child.get_first_child)
+                    add(child.get_first_child());
+            }
+        }
+        return menus;
+    }
+
     _recenterIslandMenu(menu) {
         const bp = menu && menu._boxPointer;
         const box = Main.panel && Main.panel._rightBox;
         if (!bp || !box)
             return;
-        // Defer so GNOME finishes its own positioning first, then re-anchor the
-        // arrow to the center of the island block.
-        GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+        const apply = () => {
             if (this._panelIslandActive && menu.isOpen) {
                 try {
-                    bp.setPosition(box, 0.5);
+                    bp.setPosition(box, 0.5);   // arrow centered on the island
                 } catch (_e) { /* ignore */ }
             }
             return GLib.SOURCE_REMOVE;
-        });
+        };
+        // Once after GNOME's own positioning, and once more shortly after in
+        // case the indicator re-positions its menu when it opens.
+        GLib.idle_add(GLib.PRIORITY_DEFAULT, apply);
+        GLib.timeout_add(GLib.PRIORITY_DEFAULT, 40, apply);
     }
 
     _disconnectIslandMenus() {
@@ -1162,7 +1274,7 @@ export default class DockStacksExtension extends Extension {
         } catch (_e) {
             gicon = new Gio.ThemedIcon({name: 'view-app-grid-symbolic'});
         }
-        const icon = new St.Icon({gicon, icon_size: iconSize});
+        const icon = makeAnimatedIcon(spec, iconSize) || new St.Icon({gicon, icon_size: iconSize});
         const btn = new DockItemButton(icon, _('Aplicaciones'), iconSize);
         btn.add_style_class_name('dock-apps-button');
         this._appsButtonActor = btn;   // reference for the genie effect
@@ -1660,6 +1772,13 @@ export default class DockStacksExtension extends Extension {
             },
             // Close the app grid (e.g. when a news card opens an article).
             closeGrid: () => this._closeAppGrid(),
+            // DMC (MeteoChile) credentials for the weather source.
+            getDmcUser: () => {
+                try { return this._settings.get_string('weather-dmc-user'); } catch (_e) { return ''; }
+            },
+            getDmcToken: () => {
+                try { return this._settings.get_string('weather-dmc-token'); } catch (_e) { return ''; }
+            },
         };
     }
 
@@ -1744,6 +1863,23 @@ export default class DockStacksExtension extends Extension {
         this._sidebarWidgetInstances = [];
     }
 
+    // Applies the app-grid theme (light/dark) and background opacity to the
+    // panel. The opacity is the SAME as the dock and the top-bar island
+    // ('background-opacity'), and the dark base color matches them (30,30,30).
+    // Safe to call any time; no-op if the grid is closed.
+    _applyAppGridSurface(theme) {
+        const panel = this._appGridPanel;
+        if (!panel)
+            return;
+        const t = theme || this._settings.get_string('appgrid-theme');
+        panel.remove_style_class_name('light');
+        panel.remove_style_class_name('dark');
+        panel.add_style_class_name(t);
+        const op = this._settings.get_int('background-opacity') / 100;
+        const baseRGB = t === 'light' ? '248, 249, 251' : '30, 30, 30';
+        panel.set_style(`background-color: rgba(${baseRGB}, ${op.toFixed(2)});`);
+    }
+
     // -------------------------------------------- custom apps grid
     _openAppGrid(srcBtn) {
         this._closeAppGrid();
@@ -1769,6 +1905,13 @@ export default class DockStacksExtension extends Extension {
                     this._closeAppGridMenu();
                 else
                     this._closeAppGrid(true);
+                return Clutter.EVENT_STOP;
+            }
+            // Ctrl+K focuses the search box.
+            const ctrl = (ev.get_state() & Clutter.ModifierType.CONTROL_MASK) !== 0;
+            if (ctrl && ev.get_key_symbol() === Clutter.KEY_k) {
+                if (this._appGridSearch)
+                    this._appGridSearch.grab_key_focus();
                 return Clutter.EVENT_STOP;
             }
             return Clutter.EVENT_PROPAGATE;
@@ -1799,200 +1942,245 @@ export default class DockStacksExtension extends Extension {
         overlay.add_child(bg);
         this._appGridBg = bg;
 
-        const ph = Math.min(monitor.height - 140, 820);
-        const sidebarW = 265;
+        // Panel height: use most of the screen (taller cap + smaller margin) so
+        // the stacked Clima + music column fits comfortably and every card has
+        // room to breathe.
+        const ph = Math.min(monitor.height - 120, 960);
+        const sidebarW = 220;           // rail: icon-left + text categories
         const gap = 16;
-        const CELL_STEP = 136;          // real width of each cell (110 + padding + spacing)
-        const FRAME_EXTRA = 28 + 18;    // frame padding + scrollbar
+        const CELL_STEP = 136;          // real cell width (110 + padding 20 + spacing 6)
 
-        // Number of columns that fit the available width (clamped), and the apps
-        // frame width fits EXACTLY those columns (no empty strip).
-        const availGrid = Math.min(monitor.width - 120, 1400) - sidebarW - gap;
-        const columns = Math.max(3, Math.min(8,
-            Math.floor((availGrid - FRAME_EXTRA) / CELL_STEP)));
-        const gridAreaW = columns * CELL_STEP + FRAME_EXTRA;
-        this._appGridGridWidth = gridAreaW;   // used to wrap the widgets row
+        // Favorites "dashboard": a Favorites apps card + the grid widget cards
+        // (weather, news, …) side by side. The content width fits them all.
+        const favCardCols = 3;
+        const favCardW = favCardCols * CELL_STEP + 30;
+        const gridWidgets = safeParseWidgets(this._settings.get_string('widgets'))
+            .filter(w => widgetPlace(w) === 'grid' && w.type !== 'chat');
+        const estWidth = (t) => ({
+            weather: 330, clock: 330, news: 470, mpris: 330, photos: 300, system: 330,
+        }[t] || 280);
+        // Stacked columns: the music player (mpris) sits under the weather card,
+        // and the system monitor under the news card, when both of each pair
+        // exist — so the lower one needs no horizontal slot of its own.
+        const stackMpris = gridWidgets.some(w => w.type === 'weather') &&
+            gridWidgets.some(w => w.type === 'mpris');
+        const stackSystem = gridWidgets.some(w => w.type === 'news') &&
+            gridWidgets.some(w => w.type === 'system');
+        let widgetsW = 0;
+        for (const w of gridWidgets) {
+            if (stackMpris && w.type === 'mpris')
+                continue;
+            if (stackSystem && w.type === 'system')
+                continue;
+            widgetsW += estWidth(w.type) + gap;
+        }
+        let contentW = favCardW + gap + widgetsW;
+        contentW = Math.max(560, Math.min(contentW, monitor.width - sidebarW - gap - 60));
+        this._favCardCols = favCardCols;
+        this._favCardWidth = favCardW;
+        this._cardAreaHeight = Math.max(300, ph - 120);  // bounds the card heights
+        this._appGridGridWidth = contentW;
+        // Columns for the plain apps grid (non-favorites / search). Uses the real
+        // cell step and leaves room for content padding + scrollbar so rows never
+        // overflow the panel.
+        const columns = Math.max(3, Math.min(9, Math.floor((contentW - 40) / CELL_STEP)));
+        const gridAreaW = contentW;
         const pw = sidebarW + gap + gridAreaW;
 
-        // Transparent container holding the two separate frames
+        // Single unified panel: one rounded card holding the rail + content.
         const panel = new St.BoxLayout({
             style_class: 'dock-appgrid-container',
             orientation: Clutter.Orientation.HORIZONTAL,
             reactive: true,
         });
         panel.set_size(pw, ph);
-        // Centered: same distance left and right
         const panelX = Math.round((monitor.width - pw) / 2);
         const panelY = Math.round((monitor.height - ph) / 2);
         panel.set_position(panelX, panelY);
         overlay.add_child(panel);
         this._appGridPanel = panel;
-        // Genie-effect pivot toward the center of the menu button
         this._setGeniePivot(panel, this._appGridSrcBtn,
             monitor.x + panelX, monitor.y + panelY, pw, ph);
 
-        // Inner frames: white (light) or dark, per the selector; configurable opacity
-        const opacity = this._settings.get_int('appgrid-opacity') / 100;
-        const theme = this._settings.get_string('appgrid-theme'); // 'light' = white, 'dark' = dark
-        const baseRGB = theme === 'light' ? '255, 255, 255' : '28, 28, 30';
-        const innerStyle = `background-color: rgba(${baseRGB}, ${opacity.toFixed(2)});`;
-        panel.add_style_class_name(theme);
+        // Theme (light/dark) + background opacity. Applied here and re-applied
+        // live from the settings 'changed' handler and the theme switcher.
+        this._applyAppGridSurface(this._settings.get_string('appgrid-theme'));
 
-        // --- Categories frame (same height as the apps frame) ---
-        const sidebar = new St.BoxLayout({
-            style_class: 'dock-appgrid-sidebar',
+        // --- Left rail (part of the single panel; no separate frame) ---
+        const rail = new St.BoxLayout({
+            style_class: 'dock-appgrid-rail',
             orientation: Clutter.Orientation.VERTICAL,
         });
-        sidebar.set_size(sidebarW, ph);          // same length as the apps frame
-        panel.add_child(sidebar);
+        rail.set_size(sidebarW, ph);
+        panel.add_child(rail);
 
-        const sidebarInner = new St.BoxLayout({
-            style_class: 'dock-appgrid-inner',
-            orientation: Clutter.Orientation.VERTICAL,
-            x_expand: true,
-            y_expand: true,                      // fills the whole height of the frame
-        });
-        sidebarInner.set_style(innerStyle);
-        sidebar.add_child(sidebarInner);
+        // Header: the current user's avatar + name.
+        const header = new St.BoxLayout({style_class: 'dock-appgrid-header'});
+        let realName = GLib.get_real_name() || GLib.get_user_name();
+        let avatarFile = null;
+        try {
+            const user = AccountsService.UserManager.get_default()
+                .get_user(GLib.get_user_name());
+            if (user) {
+                if (user.get_real_name())
+                    realName = user.get_real_name();
+                const f = user.get_icon_file();
+                if (f && GLib.file_test(f, GLib.FileTest.EXISTS))
+                    avatarFile = f;
+            }
+        } catch (_e) { /* fall back below */ }
+        if (!avatarFile) {
+            const face = `${GLib.get_home_dir()}/.face`;
+            if (GLib.file_test(face, GLib.FileTest.EXISTS))
+                avatarFile = face;
+        }
+        if (avatarFile) {
+            const avatar = new St.Widget({
+                style_class: 'dock-appgrid-avatar',
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            avatar.set_style(`background-image: url("file://${avatarFile}"); background-size: cover;`);
+            header.add_child(avatar);
+        } else {
+            header.add_child(new St.Icon({
+                icon_name: 'avatar-default-symbolic', icon_size: 28,
+                y_align: Clutter.ActorAlign.CENTER,
+                style_class: 'dock-appgrid-header-icon',
+            }));
+        }
+        header.add_child(new St.Label({
+            text: realName,
+            y_align: Clutter.ActorAlign.CENTER,
+            style_class: 'dock-appgrid-header-label',
+        }));
+        rail.add_child(header);
 
         this._appGridCategory = 'favorites';
         this._catButtons = {};
-        for (const cat of DockStacksExtension.CATEGORIES) {
-            const catRow = new St.BoxLayout({
-                orientation: Clutter.Orientation.HORIZONTAL,
+        // Category button: icon on the left, label on the right.
+        this._catIconBins = [];   // {bin, cat} for live theme recolouring
+        const makeCatBtn = (cat) => {
+            const rowc = new St.BoxLayout({
+                style_class: 'dock-appgrid-cat-row',
                 x_expand: true,
                 x_align: Clutter.ActorAlign.FILL,
             });
-            catRow.set_style('spacing: 10px;');
             if (cat.icon) {
-                let cicon;
-                try {
-                    cicon = Gio.icon_new_for_string(cat.icon);
-                } catch (_e) {
-                    cicon = null;
-                }
-                if (cicon)
-                    catRow.add_child(new St.Icon({gicon: cicon, icon_size: 20, y_align: Clutter.ActorAlign.CENTER}));
+                // Icon lives in a Bin so it can be recoloured live on theme
+                // change (raster category icons are tinted white in dark mode).
+                const iconBin = new St.Bin({y_align: Clutter.ActorAlign.CENTER});
+                const dark = this._settings.get_string('appgrid-theme') !== 'light';
+                iconBin.set_child(this._makeCatIcon(cat, dark));
+                rowc.add_child(iconBin);
+                this._catIconBins.push({bin: iconBin, cat});
             }
-            const catLabel = new St.Label({
+            const lbl = new St.Label({
                 text: _(cat.label),
                 x_expand: true,
                 x_align: Clutter.ActorAlign.START,
                 y_align: Clutter.ActorAlign.CENTER,
+                style_class: 'dock-appgrid-cat-label',
             });
-            catLabel.clutter_text.set_ellipsize(0 /* PANGO_ELLIPSIZE_NONE */);
-            catRow.add_child(catLabel);
-            const catBtn = new St.Button({
+            lbl.clutter_text.set_ellipsize(3 /* END */);
+            rowc.add_child(lbl);
+            const btn = new St.Button({
                 style_class: 'dock-appgrid-cat',
                 x_expand: true,
                 x_align: Clutter.ActorAlign.FILL,
-                child: catRow,
+                child: rowc,
             });
             if (cat.key === this._appGridCategory)
-                catBtn.add_style_class_name('selected');
-            catBtn.connect('clicked', () => {
+                btn.add_style_class_name('selected');
+            btn.connect('clicked', () => {
                 this._appGridCategory = cat.key;
                 for (const k in this._catButtons)
                     this._catButtons[k].remove_style_class_name('selected');
-                catBtn.add_style_class_name('selected');
+                btn.add_style_class_name('selected');
                 this._populateAppGrid(this._appGridSearch ? this._appGridSearch.get_text() : '');
             });
-            this._catButtons[cat.key] = catBtn;
-            sidebarInner.add_child(catBtn);
-        }
+            this._catButtons[cat.key] = btn;
+            return btn;
+        };
 
-        // AI chat widget in the sidebar, above the Settings button. It fills the
-        // gap between the categories and Settings. If there's no chat widget, a
-        // plain spacer keeps Settings pinned to the bottom.
-        const chatSpec = safeParseWidgets(this._settings.get_string('widgets'))
-            .find(w => w && w.type === 'chat' && widgetPlace(w) === 'grid');
-        let chatInst = null;
-        if (chatSpec) {
-            try {
-                chatInst = makeWidget(chatSpec, this._settings.get_int('icon-size'), _,
-                    resolveLanguage(this._settings), this._widgetHooks(), 'grid');
-            } catch (e) {
-                logError(e, 'Dock Stack: chat en barra lateral');
-                chatInst = null;
-            }
-        }
-        if (chatInst) {
-            chatInst.actor.set_width(sidebarW - 16);
-            chatInst.actor.y_expand = true;
-            chatInst.actor.y_align = Clutter.ActorAlign.FILL;
-            sidebarInner.add_child(chatInst.actor);
-            this._sidebarWidgetInstances.push(chatInst);
-        } else {
-            // Spacer that pushes the settings button to the bottom
-            sidebarInner.add_child(new St.Widget({y_expand: true}));
-        }
+        for (const cat of DockStacksExtension.CATEGORIES)
+            rail.add_child(makeCatBtn(cat));   // "Todas las aplicaciones" is last
 
-        // Settings button (opens preferences) with a custom icon
-        const cfgBtn = new St.Button({
-            style_class: 'dock-appgrid-cat dock-appgrid-config',
-            x_expand: true,
-            x_align: Clutter.ActorAlign.FILL,
+        rail.add_child(new St.Widget({y_expand: true}));            // push switcher down
+        rail.add_child(new St.Widget({style_class: 'dock-appgrid-divider'}));
+
+        // Theme switcher (Claro / Oscuro) at the bottom of the rail.
+        const themeIcon = new St.Icon({
+            icon_size: 18, y_align: Clutter.ActorAlign.CENTER,
+            style_class: 'dock-appgrid-cat-icon',
         });
-        const cfgBox = new St.BoxLayout({
-            orientation: Clutter.Orientation.HORIZONTAL,
-            x_expand: true,
-            x_align: Clutter.ActorAlign.FILL,
+        const themeLbl = new St.Label({
+            x_expand: true, x_align: Clutter.ActorAlign.START,
+            y_align: Clutter.ActorAlign.CENTER, style_class: 'dock-appgrid-cat-label',
         });
-        cfgBox.set_style('spacing: 10px;'); // in GNOME 48 'spacing' is set via CSS, not in the constructor
-        let cfgGicon;
-        try {
-            cfgGicon = Gio.icon_new_for_string('/home/fabarcad/Imágenes/Icon/config_icon_132468.png');
-        } catch (_e) {
-            cfgGicon = new Gio.ThemedIcon({name: 'emblem-system-symbolic'});
-        }
-        cfgBox.add_child(new St.Icon({gicon: cfgGicon, icon_size: 22, y_align: Clutter.ActorAlign.CENTER}));
-        const cfgLbl = new St.Label({
-            text: _('Configuración'),
+        const syncThemeBtn = () => {
+            const t = this._settings.get_string('appgrid-theme');
+            themeLbl.text = t === 'light' ? _('Claro') : _('Oscuro');
+            themeIcon.icon_name = t === 'light'
+                ? 'weather-clear-symbolic' : 'weather-clear-night-symbolic';
+        };
+        const themeRow = new St.BoxLayout({
+            style_class: 'dock-appgrid-cat-row',
+            x_expand: true, x_align: Clutter.ActorAlign.FILL,
+        });
+        themeRow.add_child(themeIcon);
+        themeRow.add_child(themeLbl);
+        themeRow.add_child(new St.Icon({
+            icon_name: 'pan-down-symbolic', icon_size: 14,
             y_align: Clutter.ActorAlign.CENTER,
-            x_expand: true,
-            x_align: Clutter.ActorAlign.START,
+        }));
+        const themeBtn = new St.Button({
+            style_class: 'dock-appgrid-cat dock-appgrid-theme-btn',
+            x_expand: true, x_align: Clutter.ActorAlign.FILL,
+            can_focus: true, child: themeRow,
         });
-        cfgBox.add_child(cfgLbl);
-        cfgBtn.set_child(cfgBox);
-        cfgBtn.connect('clicked', () => {
-            this._closeAppGrid();
-            this.openPreferences();
+        syncThemeBtn();
+        themeBtn.connect('clicked', () => {
+            const next = this._settings.get_string('appgrid-theme') === 'light' ? 'dark' : 'light';
+            this._settings.set_string('appgrid-theme', next);
+            this._applyAppGridSurface(next);
+            syncThemeBtn();
+            this._refreshCatIcons();   // tint raster icons white in dark mode
         });
-        sidebarInner.add_child(cfgBtn);
+        rail.add_child(themeBtn);
 
-        // --- Applications frame (outer + translucent inner) ---
-        const right = new St.BoxLayout({
-            orientation: Clutter.Orientation.VERTICAL,
-            style_class: 'dock-appgrid-apps',
-        });
-        right.set_size(gridAreaW, ph);   // fixed size → constant shape
-        panel.add_child(right);
-
+        // --- Right content column (search bar + cards/apps) ---
         const rightInner = new St.BoxLayout({
-            style_class: 'dock-appgrid-inner',
+            style_class: 'dock-appgrid-content',
             orientation: Clutter.Orientation.VERTICAL,
             x_expand: true,
             y_expand: true,
         });
-        rightInner.set_style(innerStyle);
-        right.add_child(rightInner);
+        panel.add_child(rightInner);
 
-        // Top row: search box (shorter) + sort button
-        const topRow = new St.BoxLayout({
-            style_class: 'dock-appgrid-toprow',
+        // Search bar (half the content width): magnifier + entry + sort + hint.
+        const searchbar = new St.BoxLayout({
+            style_class: 'dock-appgrid-searchbar',
             orientation: Clutter.Orientation.HORIZONTAL,
-            x_expand: true,
+            x_expand: false,
+            x_align: Clutter.ActorAlign.START,
+            y_align: Clutter.ActorAlign.CENTER,
         });
-        rightInner.add_child(topRow);
+        searchbar.set_width(Math.round(gridAreaW / 2));
+        rightInner.add_child(searchbar);
+
+        searchbar.add_child(new St.Icon({
+            icon_name: 'edit-find-symbolic', icon_size: 20,
+            style_class: 'dock-appgrid-search-icon',
+            y_align: Clutter.ActorAlign.CENTER,
+        }));
 
         const search = new St.Entry({
             style_class: 'dock-appgrid-search',
             can_focus: true,
-            x_expand: false,
+            x_expand: true,
         });
         search.set_hint_text(_('Buscar aplicaciones…'));
-        search.set_width(Math.round(Math.min(520, (gridAreaW - 60) * 0.6)));
-        topRow.add_child(search);
+        searchbar.add_child(search);
         this._appGridSearch = search;
 
         // Alphabetical sort button (remembers the choice across openings)
@@ -2017,7 +2205,13 @@ export default class DockStacksExtension extends Extension {
                 : 'view-sort-ascending-symbolic';
             this._populateAppGrid(this._appGridSearch ? this._appGridSearch.get_text() : '');
         });
-        topRow.add_child(sortBtn);
+        searchbar.add_child(sortBtn);
+
+        searchbar.add_child(new St.Label({
+            style_class: 'dock-appgrid-kbd',
+            text: 'Ctrl + K',
+            y_align: Clutter.ActorAlign.CENTER,
+        }));
 
         const scroll = new St.ScrollView({style_class: 'dock-appgrid-scroll', y_expand: true, x_expand: true});
         // No horizontal scroll (avoids clipping columns); vertical automatic
@@ -2102,6 +2296,386 @@ export default class DockStacksExtension extends Extension {
         }
     }
 
+    // One app cell (icon + label), with launch + right-click menu + hover shake.
+    _makeAppCell(app) {
+        const cell = new St.Button({
+            style_class: 'dock-appgrid-cell', can_focus: true, track_hover: true,
+        });
+        attachHoverShake(cell);
+        const vb = new St.BoxLayout({
+            orientation: Clutter.Orientation.VERTICAL,
+            x_align: Clutter.ActorAlign.CENTER,
+        });
+        const gicon = app.get_icon() ?? new Gio.ThemedIcon({name: 'application-x-executable'});
+        vb.add_child(new St.Icon({gicon, icon_size: 64}));
+        const lbl = new St.Label({style_class: 'dock-appgrid-label', text: app.get_display_name()});
+        lbl.clutter_text.set_line_wrap(true);
+        lbl.clutter_text.set_ellipsize(3 /* END */);
+        vb.add_child(lbl);
+        cell.set_child(vb);
+        cell.connect('clicked', () => this._launchAppInfo(app));
+        cell.connect('button-press-event', (_a, ev) => {
+            if (ev.get_button() === Clutter.BUTTON_SECONDARY) {
+                const [sx, sy] = ev.get_coords();
+                this._showAppGridMenu(app, sx, sy);
+                return Clutter.EVENT_STOP;
+            }
+            return Clutter.EVENT_PROPAGATE;
+        });
+        return cell;
+    }
+
+    _renderAppRows(parent, apps, cols) {
+        let row = null;
+        apps.forEach((app, i) => {
+            if (i % cols === 0) {
+                row = new St.BoxLayout({style_class: 'dock-appgrid-row'});
+                parent.add_child(row);
+            }
+            row.add_child(this._makeAppCell(app));
+        });
+    }
+
+    // Builds a category icon. Raster (file) icons are monochrome black, so in
+    // dark mode they'd be invisible — tint them white. Symbolic/theme icons and
+    // light mode keep the normal icon (CSS colours symbolic ones).
+    _makeCatIcon(cat, dark, size = 22) {
+        if (!cat || !cat.icon)
+            return null;
+        let path = cat.icon;
+        const isFile = path.startsWith('/') || path.startsWith('file://');
+        if (dark && isFile) {
+            if (path.startsWith('file://')) {
+                try { path = GLib.filename_from_uri(path)[0]; } catch (_e) { /* keep */ }
+            }
+            if (GLib.file_test(path, GLib.FileTest.EXISTS)) {
+                const content = this._whiteTintContent(path, size);
+                if (content) {
+                    const w = new St.Widget({
+                        width: size, height: size,
+                        style_class: 'dock-appgrid-cat-icon',
+                        y_align: Clutter.ActorAlign.CENTER,
+                    });
+                    w.set_content_gravity(Clutter.ContentGravity.RESIZE_ASPECT);
+                    w.set_content(content);
+                    return w;
+                }
+            }
+        }
+        let ci;
+        try { ci = Gio.icon_new_for_string(cat.icon); } catch (_e) { ci = null; }
+        if (!ci)
+            return null;
+        return new St.Icon({
+            gicon: ci, icon_size: size,
+            y_align: Clutter.ActorAlign.CENTER,
+            style_class: 'dock-appgrid-cat-icon',
+        });
+    }
+
+    // Loads a (monochrome) image and returns its white-tinted content, keeping
+    // the alpha channel, or null on failure.
+    _whiteTintContent(path, size) {
+        try {
+            let pb = GdkPixbuf.Pixbuf.new_from_file_at_size(path, size * 2, size * 2);
+            if (!pb)
+                return null;
+            if (!pb.get_has_alpha())
+                pb = pb.add_alpha(false, 0, 0, 0);
+            const w = pb.get_width(), h = pb.get_height();
+            const rs = pb.get_rowstride(), nch = pb.get_n_channels();
+            const data = pb.get_pixels();   // Uint8Array (copy)
+            for (let i = 0; i + nch - 1 < data.length; i += nch) {
+                data[i] = 255; data[i + 1] = 255; data[i + 2] = 255;   // white; keep alpha
+            }
+            const coglContext = global.stage.context.get_backend().get_cogl_context();
+            const content = St.ImageContent.new_with_preferred_size(w, h);
+            content.set_bytes(coglContext, GLib.Bytes.new(data),
+                Cogl.PixelFormat.RGBA_8888, w, h, rs);
+            return content;
+        } catch (_e) {
+            return null;
+        }
+    }
+
+    _refreshCatIcons() {
+        const dark = this._settings.get_string('appgrid-theme') !== 'light';
+        for (const {bin, cat} of (this._catIconBins || [])) {
+            try { bin.set_child(this._makeCatIcon(cat, dark)); } catch (_e) { /* ok */ }
+        }
+    }
+
+    _cardHeader(icon, title) {
+        const h = new St.BoxLayout({style_class: 'dock-appgrid-card-header'});
+        if (icon) {
+            let gi;
+            try { gi = Gio.icon_new_for_string(icon); } catch (_e) { gi = null; }
+            if (gi)
+                h.add_child(new St.Icon({gicon: gi, icon_size: 20, y_align: Clutter.ActorAlign.CENTER}));
+        }
+        h.add_child(new St.Label({
+            style_class: 'dock-appgrid-card-title', text: title,
+            x_expand: true, y_align: Clutter.ActorAlign.CENTER,
+        }));
+        return h;
+    }
+
+    // Favorites "dashboard": the Favorites apps card plus the grid widget cards
+    // (weather, news, …) laid out side by side, as in the mockup.
+    _renderFavoritesDashboard(box) {
+        const cards = new St.BoxLayout({
+            style_class: 'dock-appgrid-cards',
+            orientation: Clutter.Orientation.HORIZONTAL,
+            x_expand: true, y_expand: true,
+        });
+        // Bound the card heights so tall cards (news) use their own scroll.
+        cards.set_height(this._cardAreaHeight || 560);
+
+        const favApps = this._allApps.filter(a => this._appInCategory(a, 'favorites'));
+        if (this._appGridSortDesc)
+            favApps.reverse();
+        this._appGridFiltered = favApps;
+
+        const favCard = new St.BoxLayout({
+            style_class: 'dock-appgrid-card',
+            orientation: Clutter.Orientation.VERTICAL,
+            y_expand: true, y_align: Clutter.ActorAlign.FILL,
+        });
+        favCard.set_width(this._favCardWidth || 420);
+        const favCat = DockStacksExtension.CATEGORIES.find(c => c.key === 'favorites');
+        favCard.add_child(this._cardHeader(favCat && favCat.icon, _('Favoritos')));
+        const favScroll = new St.ScrollView({style_class: 'dock-appgrid-card-scroll', y_expand: true});
+        favScroll.set_policy(St.PolicyType.NEVER, St.PolicyType.AUTOMATIC);
+        const favGrid = new St.BoxLayout({
+            style_class: 'dock-appgrid-card-grid',
+            orientation: Clutter.Orientation.VERTICAL,
+        });
+        favScroll.set_child(favGrid);
+        if (favApps.length)
+            this._renderAppRows(favGrid, favApps, this._favCardCols || 3);
+        else
+            favGrid.add_child(new St.Label({style_class: 'dock-appgrid-label', text: _('Sin favoritos')}));
+        favCard.add_child(favScroll);
+        cards.add_child(favCard);
+
+        const widgets = safeParseWidgets(this._settings.get_string('widgets'))
+            .filter(w => widgetPlace(w) === 'grid' && w.type !== 'chat');
+        const iconSize = this._settings.get_int('icon-size');
+
+        // Build every widget instance first, then lay them out. The music player
+        // (mpris) is tucked under the weather card in a shared vertical column.
+        const entries = [];
+        for (const wspec of widgets) {
+            let inst;
+            try {
+                inst = makeWidget(wspec, iconSize, _, resolveLanguage(this._settings),
+                    this._widgetHooks(), 'grid');
+            } catch (e) {
+                logError(e, 'Dock Stack: widget en la rejilla');
+                continue;
+            }
+            this._gridWidgetInstances.push(inst);
+            entries.push({wspec, inst});
+        }
+
+        const weatherEntry = entries.find(e => e.wspec.type === 'weather');
+        const mprisEntry = entries.find(e => e.wspec.type === 'mpris');
+        const stackMpris = weatherEntry && mprisEntry;
+        const newsEntry = entries.find(e => e.wspec.type === 'news');
+        const systemEntry = entries.find(e => e.wspec.type === 'system');
+        const stackSystem = newsEntry && systemEntry;
+
+        // Wrap a widget actor in a card slot. `expand` true → fills remaining
+        // vertical space; false → keeps its natural height, top-aligned.
+        const makeSlot = (inst, expand) => {
+            try {
+                inst.actor.y_expand = expand;
+                inst.actor.y_align = expand ? Clutter.ActorAlign.FILL : Clutter.ActorAlign.START;
+            } catch (_e) { /* ok */ }
+            return new St.Bin({
+                style_class: 'dock-appgrid-card-slot',
+                child: inst.actor,
+                y_expand: expand,
+                y_align: expand ? Clutter.ActorAlign.FILL : Clutter.ActorAlign.START,
+            });
+        };
+
+        // Reorderable widget columns (everything except the Favorites card),
+        // in visual order, each with the widget ids it holds (for persistence).
+        const reorderCols = [];
+        for (const entry of entries) {
+            if (stackMpris && entry === mprisEntry)
+                continue;   // rendered under the weather card below
+            if (stackSystem && entry === systemEntry)
+                continue;   // rendered under the news card below
+            if (stackMpris && entry === weatherEntry) {
+                // Middle column: weather on top (natural height) and the music
+                // player below, filling the rest of the column down to the
+                // bottom — so its rounded bottom lines up with the Favorites and
+                // News cards. Its art flexes, so the controls are never clipped.
+                const col = new St.BoxLayout({
+                    style_class: 'dock-appgrid-card-col',
+                    orientation: Clutter.Orientation.VERTICAL,
+                    y_expand: true, y_align: Clutter.ActorAlign.FILL,
+                });
+                col.add_child(makeSlot(weatherEntry.inst, false));
+                col.add_child(makeSlot(mprisEntry.inst, true));
+                cards.add_child(col);
+                reorderCols.push({actor: col, ids: [weatherEntry.wspec.id, mprisEntry.wspec.id]});
+            } else if (stackSystem && entry === newsEntry) {
+                // News column: the news feed fills the top (it scrolls), and the
+                // system monitor sits below at its natural height.
+                const col = new St.BoxLayout({
+                    style_class: 'dock-appgrid-card-col',
+                    orientation: Clutter.Orientation.VERTICAL,
+                    y_expand: true, y_align: Clutter.ActorAlign.FILL,
+                });
+                col.add_child(makeSlot(newsEntry.inst, true));
+                col.add_child(makeSlot(systemEntry.inst, false));
+                cards.add_child(col);
+                reorderCols.push({actor: col, ids: [newsEntry.wspec.id, systemEntry.wspec.id]});
+            } else {
+                const slot = makeSlot(entry.inst, true);
+                cards.add_child(slot);
+                reorderCols.push({actor: slot, ids: [entry.wspec.id]});
+            }
+        }
+
+        box.add_child(cards);
+        this._setupGridWidgetDnd(cards, reorderCols);
+    }
+
+    // ---- Drag & drop: reorder the grid widget columns ----
+    _setupGridWidgetDnd(cards, cols) {
+        if (!cols || cols.length < 2)
+            return;   // nothing to reorder
+        for (const c of cols) {
+            const actor = c.actor;
+            actor.reactive = true;
+            // The delegate carries the ids and provides a clone as the drag
+            // actor, so the real column stays in place (no reflow) while a
+            // ghost follows the pointer.
+            actor._delegate = {
+                dsGridIds: c.ids,
+                getDragActor: () => new Clutter.Clone({
+                    source: actor,
+                    width: actor.width,
+                    height: actor.height,
+                    opacity: 220,
+                }),
+                getDragActorSource: () => actor,
+            };
+            const draggable = DND.makeDraggable(actor, {dragActorOpacity: 220});
+            draggable.connect('drag-begin', () => {
+                this._gridDndCols = cols;
+                this._gridDndCards = cards;
+                actor.opacity = 110;
+                actor.add_style_class_name('ds-col-dragging');
+            });
+            const end = () => {
+                actor.opacity = 255;
+                actor.remove_style_class_name('ds-col-dragging');
+                this._clearGridDropIndicator();
+            };
+            draggable.connect('drag-end', end);
+            draggable.connect('drag-cancelled', end);
+        }
+        // The cards row is the drop target.
+        cards._delegate = {
+            handleDragOver: (source) => {
+                if (!source || source.dsGridIds === undefined)
+                    return DND.DragMotionResult.NO_DROP;
+                this._showGridDropIndicator(cards, cols);
+                return DND.DragMotionResult.MOVE_DROP;
+            },
+            acceptDrop: (source) => {
+                if (!source || source.dsGridIds === undefined)
+                    return false;
+                this._reorderGridColumns(cols, source);
+                return true;
+            },
+        };
+    }
+
+    // Insert position (0..cols.length) from the pointer's x vs column centers.
+    _gridInsertIndex(cols) {
+        const [px] = global.get_pointer();
+        for (let i = 0; i < cols.length; i++) {
+            const a = cols[i].actor;
+            const [cx] = a.get_transformed_position();
+            const cw = a.width || a.get_width();
+            if (px < cx + cw / 2)
+                return i;
+        }
+        return cols.length;
+    }
+
+    _showGridDropIndicator(cards, cols) {
+        // Detach the previous bar first so its width doesn't skew the math.
+        if (!this._gridDropBar) {
+            this._gridDropBar = new St.Widget({
+                style_class: 'ds-col-drop-bar',
+                y_expand: true, y_align: Clutter.ActorAlign.FILL,
+            });
+            this._gridDropBar.set_width(3);
+        } else {
+            const parent = this._gridDropBar.get_parent();
+            if (parent)
+                parent.remove_child(this._gridDropBar);
+        }
+        const insert = this._gridInsertIndex(cols);
+        if (insert < cols.length)
+            cards.insert_child_below(this._gridDropBar, cols[insert].actor);
+        else
+            cards.add_child(this._gridDropBar);
+    }
+
+    _clearGridDropIndicator() {
+        if (this._gridDropBar) {
+            const parent = this._gridDropBar.get_parent();
+            if (parent)
+                parent.remove_child(this._gridDropBar);
+            this._gridDropBar.destroy();
+            this._gridDropBar = null;
+        }
+    }
+
+    _reorderGridColumns(cols, source) {
+        this._clearGridDropIndicator();
+        const order = cols.slice();
+        const srcIdx = order.findIndex(c => c.actor._delegate === source);
+        if (srcIdx < 0)
+            return;
+        let insert = this._gridInsertIndex(cols);
+        const [moved] = order.splice(srcIdx, 1);
+        if (insert > srcIdx)
+            insert--;
+        insert = Math.max(0, Math.min(order.length, insert));
+        order.splice(insert, 0, moved);
+
+        // No change → nothing to persist.
+        if (order.every((c, i) => c === cols[i]))
+            return;
+
+        const newIds = order.flatMap(c => c.ids);
+        const all = safeParseWidgets(this._settings.get_string('widgets'));
+        const byId = new Map(all.map(w => [w.id, w]));
+        let gi = 0;
+        const result = all.map(w =>
+            widgetPlace(w) === 'grid' ? (byId.get(newIds[gi++]) || w) : w);
+        // Persist without triggering the full rebuild (which closes the grid).
+        this._skipWidgetsRebuild = true;
+        this._settings.set_string('widgets', JSON.stringify(result));
+
+        // Re-render the dashboard after DND finishes its own drop cleanup.
+        GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+            this._skipWidgetsRebuild = false;   // fallback reset
+            if (this._appGridOverlay)
+                this._populateAppGrid('');
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
     _populateAppGrid(query) {
         const box = this._appGridBox;
         if (!box)
@@ -2110,61 +2684,28 @@ export default class DockStacksExtension extends Extension {
         box.destroy_all_children();
         const q = (query || '').toLowerCase().trim();
         const cat = this._appGridCategory || 'all';
+
+        // Favorites (no search) → the card dashboard; everything else → app grid.
+        if (cat === 'favorites' && !q) {
+            this._renderFavoritesDashboard(box);
+            return;
+        }
+
         const apps = this._allApps.filter(a =>
             this._appInCategory(a, cat) &&
             (!q || a.get_display_name().toLowerCase().includes(q)));
-        // _allApps is already ascending; if descending is requested, reverse it
-        if (this._appGridSortDesc)
+        if (this._appGridSortDesc)   // _allApps is ascending
             apps.reverse();
         this._appGridFiltered = apps;
 
-        const cols = this._appGridColumns;
-        let row = null;
-        apps.forEach((app, i) => {
-            if (i % cols === 0) {
-                row = new St.BoxLayout({style_class: 'dock-appgrid-row'});
-                box.add_child(row);
-            }
-            const cell = new St.Button({
-                style_class: 'dock-appgrid-cell', can_focus: true, track_hover: true,
-            });
-            attachHoverShake(cell);   // trembling on hover, like the dock icons
-            const vb = new St.BoxLayout({
-                orientation: Clutter.Orientation.VERTICAL,
-                x_align: Clutter.ActorAlign.CENTER,
-            });
-            const gicon = app.get_icon() ?? new Gio.ThemedIcon({name: 'application-x-executable'});
-            vb.add_child(new St.Icon({gicon, icon_size: 64}));
-            const lbl = new St.Label({style_class: 'dock-appgrid-label', text: app.get_display_name()});
-            lbl.clutter_text.set_line_wrap(true);
-            lbl.clutter_text.set_ellipsize(3 /* END */);
-            vb.add_child(lbl);
-            cell.set_child(vb);
-            cell.connect('clicked', () => this._launchAppInfo(app));
-            cell.connect('button-press-event', (_a, ev) => {
-                if (ev.get_button() === Clutter.BUTTON_SECONDARY) {
-                    const [sx, sy] = ev.get_coords();
-                    this._showAppGridMenu(app, sx, sy);
-                    return Clutter.EVENT_STOP;
-                }
-                return Clutter.EVENT_PROPAGATE;
-            });
-            row.add_child(cell);
-        });
-
         if (apps.length === 0) {
-            const empty = new St.Label({
+            box.add_child(new St.Label({
                 style_class: 'dock-appgrid-label',
                 text: _('Sin resultados'),
-            });
-            box.add_child(empty);
+            }));
+            return;
         }
-
-        // Dock widgets at the END of the grid, in "Favoritos" and when not
-        // searching (they are not search results). The chat widget is NOT here;
-        // it lives in the sidebar, above the Settings button.
-        if (cat === 'favorites' && !q)
-            this._appendGridWidgets(box);
+        this._renderAppRows(box, apps, this._appGridColumns);
     }
 
     _launchFirstApp() {
@@ -2552,6 +3093,9 @@ export default class DockStacksExtension extends Extension {
     _stackIcon(stack, size) {
         let gicon;
         if (stack.icon) {
+            const anim = makeAnimatedIcon(stack.icon, size);
+            if (anim)
+                return anim;   // animated GIF/APNG icon
             gicon = Gio.icon_new_for_string(stack.icon);
         } else if (stack.type === 'folder' && stack.path) {
             // Icon based on first items (approx. macOS): we use a folder icon
@@ -3499,6 +4043,11 @@ export default class DockStacksExtension extends Extension {
         this._dock.set_style(
             `background-color: rgba(30,30,30,${op.toFixed(2)});`);
         setDockOpacity(op);   // keep the widget popups in sync
+        // Dock widgets that mirror the dock's color/opacity (e.g. the clock with
+        // "dock style") re-apply their background with the new opacity.
+        for (const inst of (this._widgetInstances || [])) {
+            try { inst.applyStyle?.(); } catch (_e) { /* ignore */ }
+        }
         // Keep the top-bar island at the same opacity as the dock.
         if (this._panelIslandActive && Main.panel && Main.panel._rightBox)
             Main.panel._rightBox.set_style(this._islandBgStyle());
@@ -3602,6 +4151,21 @@ export default class DockStacksExtension extends Extension {
             }
         } catch (e) {
             logError(e, 'Dock Stack: struts');
+        }
+    }
+
+    // Force Mutter to recompute the reserved space. Needed because the dock
+    // slides in via translation_y, and GNOME computes the strut from the actor's
+    // transformed position — which still includes that translation. When the
+    // slide finishes at translation 0 no allocation change fires, so the strut
+    // would stay as computed mid-animation (dock off the edge → no reservation).
+    _refreshStruts() {
+        if (!this._strutsActive || !this._container)
+            return;
+        try {
+            Main.layoutManager._queueUpdateRegions();
+        } catch (e) {
+            logError(e, 'Dock Stack: refresh struts');
         }
     }
 
@@ -3777,6 +4341,7 @@ export default class DockStacksExtension extends Extension {
                         c.translation_y = 0;
                         c.opacity = 255;
                     }
+                    this._refreshStruts();   // ensure the reserved space is current
                 } else if (c.visible) {
                     c.visible = false;
                     c.opacity = 0;
@@ -3823,6 +4388,9 @@ export default class DockStacksExtension extends Extension {
                         this._container.translation_x = 0;
                         this._container.translation_y = 0;
                         this._container.opacity = 255;
+                        // Now that the dock is flush with the edge, recompute the
+                        // reserved space (translation changes don't trigger it).
+                        this._refreshStruts();
                     }
                 },
             });
@@ -3890,6 +4458,7 @@ export default class DockStacksExtension extends Extension {
 
         this._scheduleVisibility();
         this._scheduleIconGeometryUpdate();
+        this._refreshStruts();   // reserved space follows the new geometry
     }
 
     // Makes the minimize animation target the dock icon

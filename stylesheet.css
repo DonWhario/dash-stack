@@ -273,71 +273,195 @@
     background-color: rgba(0, 0, 0, 0.45);
 }
 
-/* transparent container separating the two frames */
+/* Single unified panel: one rounded card (background color set inline) */
 .dock-appgrid-container {
-    spacing: 16px;
+    spacing: 0;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 22px;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+}
+.dock-appgrid-container.light {
+    border-color: rgba(0, 0, 0, 0.10);
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.28);
 }
 
-/* OUTER frame: subtle border and background so the frame is visible */
-.dock-appgrid-sidebar,
-.dock-appgrid-apps {
-    background-color: rgba(18, 18, 20, 0.55);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 18px;
-    padding: 10px;
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+/* Left rail inside the panel */
+.dock-appgrid-rail {
+    padding: 14px 10px;
+    spacing: 3px;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+.dock-appgrid-container.light .dock-appgrid-rail {
+    border-right-color: rgba(0, 0, 0, 0.08);
+    background-color: rgba(0, 0, 0, 0.03);
 }
 
-/* translucent INNER frame (color/opacity applied inline) */
-.dock-appgrid-inner {
-    border: 1px solid rgba(255, 255, 255, 0.28);
-    border-radius: 14px;
-    padding: 12px;
+/* User header (avatar + name) */
+.dock-appgrid-header {
     spacing: 10px;
+    padding: 4px 8px 14px 8px;
 }
-
-.dock-appgrid-container.light .dock-appgrid-sidebar,
-.dock-appgrid-container.light .dock-appgrid-apps {
-    background-color: rgba(210, 210, 214, 0.55);
+.dock-appgrid-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 15px;
+    background-color: rgba(127, 127, 127, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+}
+.dock-appgrid-container.light .dock-appgrid-avatar {
     border-color: rgba(0, 0, 0, 0.18);
 }
-
-.dock-appgrid-cat {
-    padding: 10px 14px;
-    border-radius: 8px;
-    color: #e6e6e6;
-    font-size: 10.5pt;
-}
-
-.dock-appgrid-cat:hover {
-    background-color: rgba(255, 255, 255, 0.10);
+.dock-appgrid-header-label {
+    font-size: 13pt;
+    font-weight: bold;
     color: #ffffff;
 }
+.dock-appgrid-container.light .dock-appgrid-header-label {
+    color: #1a1a1a;
+}
 
+/* Category rows: icon on the left, label on the right */
+.dock-appgrid-cat {
+    padding: 9px 10px;
+    border-radius: 10px;
+    color: #d6d6d6;
+    transition-duration: 120ms;
+}
+.dock-appgrid-cat-row {
+    spacing: 12px;
+}
+.dock-appgrid-cat-label {
+    font-size: 11pt;
+}
+.dock-appgrid-cat:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: #ffffff;
+}
 .dock-appgrid-cat.selected {
-    background-color: rgba(76, 154, 255, 0.90);
+    background-color: rgba(255, 206, 0, 0.18);
     color: #ffffff;
     font-weight: bold;
 }
 
-.dock-appgrid-config {
-    margin-top: 6px;
-    border-top: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 8px;
+/* Divider + theme switcher at the bottom of the rail */
+.dock-appgrid-divider {
+    height: 1px;
+    margin: 8px 6px;
+    background-color: rgba(255, 255, 255, 0.10);
+}
+.dock-appgrid-container.light .dock-appgrid-divider {
+    background-color: rgba(0, 0, 0, 0.10);
+}
+.dock-appgrid-theme-btn {
+    border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.dock-appgrid-container.light .dock-appgrid-theme-btn {
+    border-color: rgba(0, 0, 0, 0.12);
 }
 
-.dock-appgrid-container.light .dock-appgrid-config {
-    border-top-color: rgba(0, 0, 0, 0.15);
+/* Right content column */
+.dock-appgrid-content {
+    padding: 16px 18px;
+    spacing: 14px;
 }
 
-.dock-appgrid-toprow {
-    spacing: 8px;
+/* Full-width search bar (pill): magnifier + entry + sort + Ctrl+K hint */
+.dock-appgrid-searchbar {
+    spacing: 10px;
+    padding: 6px 14px;
+    border-radius: 16px;
+    background-color: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.dock-appgrid-search-icon {
+    color: rgba(255, 255, 255, 0.6);
 }
 
 .dock-appgrid-search {
     font-size: 12pt;
-    padding: 8px 12px;
-    border-radius: 10px;
+    background-color: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 5px 0;
+    color: #ffffff;
+}
+
+.dock-appgrid-kbd {
+    font-size: 8.5pt;
+    color: rgba(255, 255, 255, 0.7);
+    background-color: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 8px;
+    padding: 3px 8px;
+}
+
+.dock-appgrid-container.light .dock-appgrid-searchbar {
+    background-color: rgba(0, 0, 0, 0.05);
+    border-color: rgba(0, 0, 0, 0.18);
+}
+
+.dock-appgrid-container.light .dock-appgrid-search-icon {
+    color: rgba(0, 0, 0, 0.5);
+}
+
+.dock-appgrid-container.light .dock-appgrid-kbd {
+    color: rgba(0, 0, 0, 0.6);
+    background-color: rgba(0, 0, 0, 0.08);
+    border-color: rgba(0, 0, 0, 0.18);
+}
+
+/* Content cards row (Favoritos / Clima / Noticias) */
+.dock-appgrid-cards {
+    spacing: 16px;
+}
+
+/* Column that stacks the weather card and the music player vertically. */
+.dock-appgrid-card-col {
+    spacing: 16px;
+}
+
+/* Drag & drop: reorder widget columns. */
+.ds-col-dragging { opacity: 0.4; }
+.ds-col-drop-bar {
+    background-color: rgba(255, 206, 0, 0.9);
+    border-radius: 3px;
+    margin: 6px 6px;
+}
+.dock-appgrid-container.light .ds-col-drop-bar {
+    background-color: rgba(230, 160, 0, 0.9);
+}
+
+.dock-appgrid-card {
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 16px;
+    padding: 14px;
+    spacing: 8px;
+}
+
+.dock-appgrid-card-header {
+    spacing: 8px;
+    padding: 2px 2px 10px 2px;
+}
+
+.dock-appgrid-card-title {
+    font-size: 12pt;
+    font-weight: bold;
+    color: #ffffff;
+}
+
+.dock-appgrid-card-grid {
+    spacing: 6px;
+}
+
+.dock-appgrid-container.light .dock-appgrid-card {
+    background-color: rgba(0, 0, 0, 0.04);
+    border-color: rgba(0, 0, 0, 0.12);
+}
+
+.dock-appgrid-container.light .dock-appgrid-card-title {
+    color: #1a1a1a;
 }
 
 .dock-appgrid-sort {
@@ -411,8 +535,8 @@
 }
 
 .dock-appgrid-container.light .dock-appgrid-cat.selected {
-    background-color: rgba(76, 154, 255, 0.95);
-    color: #ffffff;
+    background-color: rgba(255, 196, 0, 0.28);
+    color: #1a1a1a;
 }
 
 .dock-appgrid-container.light .dock-appgrid-label {
@@ -940,7 +1064,16 @@
 
 /* ---- Grid news feed (card list) ---- */
 .dock-newsfeed {
+    spacing: 10px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 16px;
+    padding: 14px;
+}
+
+.dock-newsfeed-head {
     spacing: 8px;
+    padding-bottom: 2px;
 }
 
 .dock-newsfeed-title {
@@ -949,23 +1082,34 @@
     font-size: 12pt;
 }
 
+.dock-newsfeed-more {
+    color: #cfcfcf;
+    border-radius: 8px;
+    padding: 2px 6px;
+    transition-duration: 120ms;
+}
+
+.dock-newsfeed-more:hover {
+    background-color: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+}
+
 .dock-newsfeed-scroll {
-    max-height: 440px;
+    max-height: 520px;
 }
 
 .dock-newsfeed-list {
-    spacing: 8px;
+    spacing: 4px;
 }
 
 .dock-newsfeed-card {
-    background-color: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 10px;
-    padding: 10px 12px;
+    padding: 8px 6px;
+    transition-duration: 120ms;
 }
 
 .dock-newsfeed-card:hover {
-    background-color: rgba(255, 255, 255, 0.12);
+    background-color: rgba(255, 255, 255, 0.08);
 }
 
 .dock-newsfeed-row {
@@ -977,25 +1121,23 @@
     background-color: rgba(255, 255, 255, 0.06);
 }
 
-.dock-newsfeed-meta {
-    spacing: 0;
-}
-
 .dock-newsfeed-source {
-    color: #7fb0ff;
-    font-size: 8.5pt;
-    font-weight: bold;
-}
-
-.dock-newsfeed-age {
     color: #9a9a9a;
     font-size: 8.5pt;
+    font-weight: bold;
 }
 
 .dock-newsfeed-headline {
     color: #f0f0f0;
     font-size: 10.5pt;
-    padding-top: 3px;
+    font-weight: bold;
+    padding: 2px 0;
+}
+
+.dock-newsfeed-age {
+    color: #8a8a8a;
+    font-size: 8.5pt;
+    padding-top: 2px;
 }
 
 .dock-newsfeed-empty {
@@ -1004,10 +1146,95 @@
     padding: 8px 2px;
 }
 
+/* News card — light theme */
+.dock-appgrid-container.light .dock-newsfeed {
+    background-color: rgba(0, 0, 0, 0.03);
+    border-color: rgba(0, 0, 0, 0.10);
+}
+.dock-appgrid-container.light .dock-newsfeed-title { color: #1a1a1a; }
+.dock-appgrid-container.light .dock-newsfeed-more { color: #555555; }
+.dock-appgrid-container.light .dock-newsfeed-more:hover {
+    background-color: rgba(0, 0, 0, 0.08); color: #000000;
+}
+.dock-appgrid-container.light .dock-newsfeed-card:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+.dock-appgrid-container.light .dock-newsfeed-source { color: #6a6a6a; }
+.dock-appgrid-container.light .dock-newsfeed-headline { color: #1a1a1a; }
+.dock-appgrid-container.light .dock-newsfeed-age { color: #7a7a7a; }
+
+/* ---- Grid weather card (mockup) ---- */
+.dock-weather-card {
+    spacing: 6px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 16px;
+    padding: 14px;
+}
+.dock-weather-head { spacing: 8px; padding-bottom: 2px; }
+.dock-weather-head-icon { color: #ffcf3f; }
+.dock-weather-title { color: #ffffff; font-weight: bold; font-size: 12pt; }
+.dock-weather-loc { color: #c8c8c8; font-size: 11pt; padding-top: 2px; }
+.dock-weather-big { color: #ffffff; font-size: 34pt; font-weight: 300; }
+.dock-weather-cond { color: #b8b8b8; font-size: 10pt; }
+.dock-weather-cond-icon,
+.dock-weather-dicon,
+.dock-weather-stat-icon { color: #e8e8e8; }
+.dock-weather-divider {
+    height: 1px; margin: 10px 0;
+    background-color: rgba(255, 255, 255, 0.10);
+}
+.dock-weather-stats { spacing: 10px; }
+.dock-weather-stat { spacing: 2px; }
+.dock-weather-stat-val { color: #ffffff; font-size: 11pt; font-weight: bold; }
+.dock-weather-stat-lbl { color: #9a9a9a; font-size: 8.5pt; }
+.dock-weather-fc-title {
+    color: #d8d8d8; font-size: 9.5pt; font-weight: bold;
+    padding: 10px 0 4px 0;
+}
+.dock-weather-days { spacing: 4px; }
+.dock-weather-day { spacing: 3px; padding: 4px 0; }
+.dock-weather-dname { color: #b0b0b0; font-size: 8.5pt; }
+.dock-weather-dtemp { color: #f0f0f0; font-size: 10pt; font-weight: bold; }
+.dock-weather-disclaimer {
+    color: rgba(255, 255, 255, 0.40);
+    font-size: 7pt;
+    padding: 6px 2px 0 0;
+    text-align: right;
+}
+
+/* Weather card — light theme */
+.dock-appgrid-container.light .dock-weather-card {
+    background-color: rgba(0, 0, 0, 0.03);
+    border-color: rgba(0, 0, 0, 0.10);
+}
+.dock-appgrid-container.light .dock-weather-title { color: #1a1a1a; }
+.dock-appgrid-container.light .dock-weather-loc { color: #444444; }
+.dock-appgrid-container.light .dock-weather-big { color: #111111; }
+.dock-appgrid-container.light .dock-weather-cond { color: #555555; }
+.dock-appgrid-container.light .dock-weather-cond-icon,
+.dock-appgrid-container.light .dock-weather-dicon,
+.dock-appgrid-container.light .dock-weather-stat-icon { color: #333333; }
+.dock-appgrid-container.light .dock-weather-divider { background-color: rgba(0, 0, 0, 0.10); }
+.dock-appgrid-container.light .dock-weather-stat-val { color: #1a1a1a; }
+.dock-appgrid-container.light .dock-weather-stat-lbl { color: #6a6a6a; }
+.dock-appgrid-container.light .dock-weather-fc-title { color: #333333; }
+.dock-appgrid-container.light .dock-weather-dname { color: #666666; }
+.dock-appgrid-container.light .dock-weather-dtemp { color: #1a1a1a; }
+.dock-appgrid-container.light .dock-weather-disclaimer { color: rgba(0, 0, 0, 0.35); }
+
 /* ---- Grid music player (now playing) ---- */
 .dock-mpris-grid {
     spacing: 6px;
-    padding: 6px 4px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 16px;
+    padding: 14px;
+}
+.dock-mpris-grid-head { spacing: 8px; padding-bottom: 6px; }
+.dock-mpris-grid-head-icon { color: #ffffff; }
+.dock-mpris-grid-head-title {
+    color: #ffffff; font-weight: bold; font-size: 12pt;
 }
 
 .dock-mpris-grid-art {
@@ -1062,6 +1289,87 @@
 
 .dock-mpris-grid-btn:hover {
     background-color: rgba(255, 255, 255, 0.14);
+}
+
+/* Music player card — light theme */
+.dock-appgrid-container.light .dock-mpris-grid {
+    background-color: rgba(0, 0, 0, 0.04);
+    border-color: rgba(0, 0, 0, 0.12);
+}
+.dock-appgrid-container.light .dock-mpris-grid-head-icon,
+.dock-appgrid-container.light .dock-mpris-grid-head-title { color: #1a1a1a; }
+.dock-appgrid-container.light .dock-mpris-grid-title { color: #111111; }
+.dock-appgrid-container.light .dock-mpris-grid-artist { color: #555555; }
+.dock-appgrid-container.light .dock-mpris-grid-time { color: #888888; }
+.dock-appgrid-container.light .dock-mpris-grid-track { background-color: rgba(0, 0, 0, 0.12); }
+.dock-appgrid-container.light .dock-mpris-grid-fill { background-color: #333333; }
+.dock-appgrid-container.light .dock-mpris-grid-btn { color: #333333; }
+.dock-appgrid-container.light .dock-mpris-grid-btn:hover { background-color: rgba(0, 0, 0, 0.08); }
+
+/* ============ System resources card ("Recursos del sistema") ============ */
+.dock-sys-grid {
+    spacing: 5px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 16px;
+    padding: 11px 14px;
+}
+.dock-sys-head { spacing: 8px; padding-bottom: 2px; }
+.dock-sys-head-icon { color: #ffffff; }
+.dock-sys-head-title { color: #ffffff; font-weight: bold; font-size: 12pt; }
+.dock-sys-live { spacing: 6px; }
+.dock-sys-live-dot {
+    background-color: #22c55e; width: 8px; height: 8px; border-radius: 4px;
+}
+.dock-sys-live-txt { color: #4ade80; font-size: 9pt; font-weight: bold; }
+
+.dock-sys-gauges { spacing: 10px; }
+.dock-sys-gauge { spacing: 1px; }
+.dock-sys-ring-pct { color: #ffffff; font-size: 17pt; font-weight: bold; }
+.dock-sys-ring-unit { color: #9aa0aa; font-size: 7.5pt; }
+.dock-sys-gauge-lbl { color: #e6e6e6; font-size: 10pt; font-weight: bold; padding-top: 0; }
+.dock-sys-gauge-sub { color: #9aa0aa; font-size: 8.5pt; }
+
+.dock-sys-spark-title { color: #9aa0aa; font-size: 8.5pt; font-weight: bold; padding: 3px 0 1px 0; }
+.dock-sys-spark { }
+
+.dock-sys-disk-row { padding: 5px 0 2px 0; }
+.dock-sys-disk-lbl { color: #e6e6e6; font-size: 10pt; font-weight: bold; }
+.dock-sys-disk-val { color: #9aa0aa; font-size: 9pt; }
+.dock-sys-disk-track {
+    background-color: rgba(255, 255, 255, 0.12); border-radius: 4px; height: 8px;
+}
+.dock-sys-disk-fill { background-color: #f59e0b; border-radius: 4px; height: 8px; }
+
+.dock-sys-stats { spacing: 8px; padding-top: 6px; }
+.dock-sys-stat {
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 12px; padding: 5px 4px; spacing: 2px;
+}
+.dock-sys-stat-lbl { color: #9aa0aa; font-size: 8.5pt; }
+.dock-sys-stat-val { font-size: 11pt; font-weight: bold; }
+.dock-sys-stat-val.dn { color: #10b981; }
+.dock-sys-stat-val.up { color: #0ea5e9; }
+.dock-sys-stat-val.tp { color: #ef4444; }
+
+/* System card — light theme */
+.dock-appgrid-container.light .dock-sys-grid {
+    background-color: rgba(0, 0, 0, 0.04); border-color: rgba(0, 0, 0, 0.12);
+}
+.dock-appgrid-container.light .dock-sys-head-icon,
+.dock-appgrid-container.light .dock-sys-head-title { color: #111827; }
+.dock-appgrid-container.light .dock-sys-ring-pct { color: #111827; }
+.dock-appgrid-container.light .dock-sys-ring-unit,
+.dock-appgrid-container.light .dock-sys-gauge-sub,
+.dock-appgrid-container.light .dock-sys-spark-title,
+.dock-appgrid-container.light .dock-sys-disk-val,
+.dock-appgrid-container.light .dock-sys-stat-lbl { color: #6b7280; }
+.dock-appgrid-container.light .dock-sys-gauge-lbl,
+.dock-appgrid-container.light .dock-sys-disk-lbl { color: #374151; }
+.dock-appgrid-container.light .dock-sys-disk-track { background-color: rgba(0, 0, 0, 0.08); }
+.dock-appgrid-container.light .dock-sys-stat {
+    background-color: rgba(0, 0, 0, 0.03); border-color: rgba(0, 0, 0, 0.08);
 }
 
 /* ---- Bigger Polaroid caption in the grid ---- */

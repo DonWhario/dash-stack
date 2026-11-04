@@ -110,6 +110,11 @@
       <summary>Animar los iconos del dock (temblor) cuando el puntero pasa por encima</summary>
     </key>
 
+    <key name="animated-icons" type="b">
+      <default>true</default>
+      <summary>Reproducir iconos animados (GIF/APNG/WebP) en los stacks y el botón de aplicaciones cuando se usa un archivo de icono animado</summary>
+    </key>
+
     <key name="chat-api-key-claude" type="s">
       <default>""</default>
       <summary>Clave API de Anthropic (Claude) para el widget de chat IA</summary>
@@ -128,6 +133,16 @@
     <key name="chat-local-url" type="s">
       <default>"http://localhost:11434/v1"</default>
       <summary>URL base del servidor local compatible con OpenAI (Ollama: http://localhost:11434/v1; LM-Studio: http://localhost:1234/v1)</summary>
+    </key>
+
+    <key name="weather-dmc-user" type="s">
+      <default>""</default>
+      <summary>Usuario (correo) de los Servicios Climáticos de la Dirección Meteorológica de Chile (meteochile.gob.cl), para usar MeteoChile como fuente del clima</summary>
+    </key>
+
+    <key name="weather-dmc-token" type="s">
+      <default>""</default>
+      <summary>Token (API key) de los Servicios Climáticos de la DMC (meteochile.gob.cl)</summary>
     </key>
 
     <key name="startup-sound" type="b">

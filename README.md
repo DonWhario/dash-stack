@@ -1,33 +1,70 @@
 # Dock Stack
 
-Bottom dock for **GNOME Shell 48–50** (Wayland) with macOS-style application
-groupings (*stacks*), a custom application grid (*Launchpad*), a taskbar with
-running apps, and tray icons (*systray*) in the top panel.
+Bottom dock for **GNOME Shell 48–51** (Wayland) with macOS-style application
+groupings (*stacks*), a custom application grid (*Launchpad*) with live widgets,
+a taskbar with running apps, and tray icons (*systray*) in the top panel.
 
 > Personal extension of *Aplicaciones y Utilitarios — ABAZA*.
 
 ## Features
 
+### Dock
+
 - **Configurable bottom dock** (icon size, opacity, position, reserved space).
 - **macOS-style stacks**: groups of apps or folders that expand as a **grid** or
   a **fan** (curved strip), with ascending/descending order.
+- **Navigable folder stacks**: scroll through large folders, drill into
+  sub-folders (with a pinned breadcrumb), and a **file-manager-style context
+  menu** (open, open with, copy, rename, move to trash…).
 - **Unified order**: favorites and stacks are mixed and **reordered by dragging**,
   with a fluid animation (icons move aside to open the gap).
 - **Running apps** in the dock, grouped per application, with indicator dots and
   window thumbnails on hover.
-- **Custom application grid** (*Launchpad*) with categories, search, alphabetical
-  sorting and a light/dark theme, replacing the GNOME *overview*.
-- **Genie effect** when opening/closing the grid (grows/shrinks from the menu button).
-- Own **systray** (StatusNotifierItem/AppIndicator) in the top panel.
-- **Intellihide** and auto-hide; hides in fullscreen (games/video).
+- **Animated icons**: GIF/APNG/WebP for stacks and the apps button (toggle in
+  Preferences).
+- Optional **hover shake** (icons tremble under the pointer).
+- **Intellihide** and auto-hide; **immersive fullscreen** (hides dock + top bar
+  and frees the space for games/video).
 - Configurable **login/logout sounds**.
+
+### Application grid (Launchpad)
+
+- Single unified panel: a **category rail** (icon + label) with the current
+  user's avatar, **search** (Ctrl+K), alphabetical sorting and a **light/dark
+  theme** switcher. Replaces the GNOME *overview*.
+- **Favorites dashboard**: a Favorites apps card alongside **widget cards**.
+- **Drag to reorder** the widget columns to any position in the grid.
+- **Genie effect** when opening/closing (grows/shrinks from the menu button).
+- Rail category icons adapt to the theme (tinted white in dark mode).
+
+### Grid widgets
+
+- **Weather**: current conditions + 5-day forecast from **Open-Meteo**, with an
+  optional **MeteoChile (DMC)** source and a small data-source note.
+- **News**: headlines by country (Google News) with resolved article thumbnails.
+- **Music player** (MPRIS): now-playing art, title/artist, progress bar and
+  transport controls; stacks under the weather card.
+- **System resources** (grid only): CPU & RAM rings, a CPU-history sparkline,
+  disk usage, network up/down and temperature; stacks under the news card.
+- **Clock** (optionally using the dock's colour/opacity), **Photos** and a
+  **script** widget.
+
+### Top bar
+
+- Own **systray** (StatusNotifierItem/AppIndicator).
+- **Island mode**: shows only the right-hand indicators block with rounded
+  corners; **configurable position** (left / center / right), opacity shared
+  with the dock, and indicator menus centred on the island.
+
+### Integration & i18n
+
 - **Multilingual UI**: Spanish, English, Portuguese, French and German (follows
   the system language, or a manual selector; falls back to English).
 - **Burn My Windows integration**: the dock sets each window's minimize target to
-  its dock icon, so Burn My Windows' *magic lamp* aims at the right icon.
-- GNOME integration: disables Dash to Dock, hides the overview dash and the native
-  applications button while active.
-- **Preferences** panel (General / Stacks / About).
+  its dock icon, so the *magic lamp* aims at the right icon.
+- Disables Dash to Dock, hides the overview dash and the native applications
+  button while active.
+- **Preferences** panel (General / Stacks / Widgets / About).
 
 ## Screenshot
 
@@ -35,7 +72,7 @@ running apps, and tray icons (*systray*) in the top panel.
 
 ## Requirements
 
-- GNOME Shell **48–50**
+- GNOME Shell **48–51**
 - **Wayland** session (recommended)
 
 ## Installation
@@ -88,11 +125,12 @@ journalctl -f -o cat /usr/bin/gnome-shell
 
 | File | Description |
 |---|---|
-| `extension.js`   | Main logic: dock, stacks, grid, intellihide, integration. |
+| `extension.js`   | Main logic: dock, stacks, grid, widgets layout, drag & drop, intellihide, integration. |
+| `widgets.js`     | Grid/dock widgets (weather, news, music, system resources, clock, photos…). |
 | `systray.js`     | StatusNotifierItem/AppIndicator host for tray icons. |
 | `prefs.js`       | Preferences panel (Adw). |
 | `translations.js`| Built-in translations (es, en, pt, fr, de). |
-| `stylesheet.css` | Styles for the dock, stacks, grid and thumbnails. |
+| `stylesheet.css` | Styles for the dock, stacks, grid, widgets and thumbnails. |
 | `schemas/`       | GSettings schema. |
 
 ## License
