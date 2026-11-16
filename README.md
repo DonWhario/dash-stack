@@ -16,6 +16,8 @@ a taskbar with running apps, and tray icons (*systray*) in the top panel.
 - **Navigable folder stacks**: scroll through large folders, drill into
   sub-folders (with a pinned breadcrumb), and a **file-manager-style context
   menu** (open, open with, copy, rename, move to trash…).
+- **Workflows**: a dock button that **launches several apps at once** when
+  clicked (new window if already running, otherwise starts them).
 - **Unified order**: favorites and stacks are mixed and **reordered by dragging**,
   with a fluid animation (icons move aside to open the gap).
 - **Running apps** in the dock, grouped per application, with indicator dots and
@@ -32,6 +34,10 @@ a taskbar with running apps, and tray icons (*systray*) in the top panel.
 - Single unified panel: a **category rail** (icon + label) with the current
   user's avatar, **search** (Ctrl+K), alphabetical sorting and a **light/dark
   theme** switcher. Replaces the GNOME *overview*.
+- **Calculator in the search**: type a math expression (`2+2`, `sqrt(144)`,
+  `(10-2)/4`, `pi*3`…) and the result appears on top; click it to copy.
+- **File search**: searching also finds documents and folders in your common
+  directories; click a result to open it with the default app.
 - **Favorites dashboard**: a Favorites apps card alongside **widget cards**.
 - **Drag to reorder** the widget columns to any position in the grid.
 - **Genie effect** when opening/closing (grows/shrinks from the menu button).
@@ -46,8 +52,15 @@ a taskbar with running apps, and tray icons (*systray*) in the top panel.
   transport controls; stacks under the weather card.
 - **System resources** (grid only): CPU & RAM rings, a CPU-history sparkline,
   disk usage, network up/down and temperature; stacks under the news card.
+- **Text / note**: your own title + free text, shown as a card.
 - **Clock** (optionally using the dock's colour/opacity), **Photos** and a
   **script** widget.
+
+### Spaces (profiles)
+
+- Save the current configuration — stacks, widgets, layout and appearance — as a
+  named **Space**, and switch between them anytime (apply, update or delete each
+  one). Excludes language, sounds and API keys.
 
 ### Top bar
 
@@ -64,7 +77,7 @@ a taskbar with running apps, and tray icons (*systray*) in the top panel.
   its dock icon, so the *magic lamp* aims at the right icon.
 - Disables Dash to Dock, hides the overview dash and the native applications
   button while active.
-- **Preferences** panel (General / Stacks / Widgets / About).
+- **Preferences** panel (General / Stacks / Widgets / Spaces / About).
 
 ## Screenshot
 

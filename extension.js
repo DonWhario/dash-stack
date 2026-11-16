@@ -54,6 +54,86 @@ function widgetPlace(w) {
     return w.place === 'grid' ? 'grid' : 'dock';
 }
 
+// Safe arithmetic evaluator for the search calculator. Supports + - * / % ^,
+// parentheses, unary signs, decimals, a few functions (sqrt, sin, cos, tan, ln,
+// log, abs, round, floor, ceil) and the constants pi/e. Returns a finite Number
+// or null when the text is not a complete math expression (no eval()).
+function evalMath(expr) {
+    const s = String(expr || '').trim();
+    if (!/[0-9]/.test(s) || !/[-+*/%^]/.test(s))
+        return null;   // needs at least a digit and an operator
+    let i = 0;
+    const skip = () => { while (i < s.length && s[i] === ' ') i++; };
+    const fail = () => { throw new Error('bad'); };
+    const parseExpr = () => {
+        let v = parseTerm(); skip();
+        while (s[i] === '+' || s[i] === '-') {
+            const op = s[i++]; const t = parseTerm();
+            v = op === '+' ? v + t : v - t; skip();
+        }
+        return v;
+    };
+    const parseTerm = () => {
+        let v = parseFactor(); skip();
+        while (s[i] === '*' || s[i] === '/' || s[i] === '%') {
+            const op = s[i++]; const f = parseFactor();
+            v = op === '*' ? v * f : op === '/' ? v / f : v % f; skip();
+        }
+        return v;
+    };
+    const parseFactor = () => {
+        skip();
+        let v = parseUnary(); skip();
+        if (s[i] === '^') { i++; v = Math.pow(v, parseFactor()); }
+        return v;
+    };
+    const parseUnary = () => {
+        skip();
+        if (s[i] === '+') { i++; return parseUnary(); }
+        if (s[i] === '-') { i++; return -parseUnary(); }
+        return parsePrimary();
+    };
+    const FN = {
+        sqrt: Math.sqrt, sin: Math.sin, cos: Math.cos, tan: Math.tan,
+        ln: Math.log, log: (x) => Math.log10(x), abs: Math.abs,
+        round: Math.round, floor: Math.floor, ceil: Math.ceil,
+    };
+    const parsePrimary = () => {
+        skip();
+        if (s[i] === '(') { i++; const v = parseExpr(); skip(); if (s[i] !== ')') fail(); i++; return v; }
+        const word = /^[a-zA-Z]+/.exec(s.slice(i));
+        if (word) {
+            const fn = word[0].toLowerCase(); i += fn.length; skip();
+            if (s[i] !== '(') {
+                if (fn === 'pi') return Math.PI;
+                if (fn === 'e') return Math.E;
+                fail();
+            }
+            i++; const arg = parseExpr(); skip(); if (s[i] !== ')') fail(); i++;
+            if (!(fn in FN)) fail();
+            return FN[fn](arg);
+        }
+        const num = /^[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?/.exec(s.slice(i));
+        if (!num) fail();
+        i += num[0].length;
+        return parseFloat(num[0]);
+    };
+    try {
+        const v = parseExpr(); skip();
+        if (i !== s.length || !isFinite(v))
+            return null;
+        return v;
+    } catch (_e) {
+        return null;
+    }
+}
+
+// Pretty-print a calculator result (trim float noise, keep integers clean).
+function fmtMath(v) {
+    const r = Math.round(v * 1e10) / 1e10;
+    return Number.isInteger(r) ? String(r) : String(parseFloat(r.toFixed(10)));
+}
+
 function iconForGicon(gicon, size) {
     return new St.Icon({gicon, icon_size: size});
 }
@@ -1141,28 +1221,35 @@ export default class DockStacksExtension extends Extension {
                 const stack = entry.stack;
                 const icon = this._stackIcon(stack, iconSize);
                 const btn = new DockItemButton(icon, stack.name, iconSize);
+                const isWorkflow = stack.type === 'workflow';
                 btn.connect('clicked', () => {
                     this._cancelHoverOpen();
-                    this._toggleStack(stack, btn);
+                    if (isWorkflow)
+                        this._runWorkflow(stack);   // launch all its apps/folders
+                    else
+                        this._toggleStack(stack, btn);
                 });
                 // Hover to deploy: passing the pointer over a stack icon opens
                 // its fan (after a short delay so crossing the dock doesn't fire).
-                btn.connect('enter-event', () => {
-                    if (this._dragActive || this._currentStackId === stack.id)
+                // Workflows just launch on click, so they have no hover-open.
+                if (!isWorkflow) {
+                    btn.connect('enter-event', () => {
+                        if (this._dragActive || this._currentStackId === stack.id)
+                            return Clutter.EVENT_PROPAGATE;
+                        this._cancelHoverOpen();
+                        this._hoverOpenTimeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 150, () => {
+                            this._hoverOpenTimeout = 0;
+                            if (btn.get_stage() && this._currentStackId !== stack.id)
+                                this._toggleStack(stack, btn);
+                            return GLib.SOURCE_REMOVE;
+                        });
                         return Clutter.EVENT_PROPAGATE;
-                    this._cancelHoverOpen();
-                    this._hoverOpenTimeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 150, () => {
-                        this._hoverOpenTimeout = 0;
-                        if (btn.get_stage() && this._currentStackId !== stack.id)
-                            this._toggleStack(stack, btn);
-                        return GLib.SOURCE_REMOVE;
                     });
-                    return Clutter.EVENT_PROPAGATE;
-                });
-                btn.connect('leave-event', () => {
-                    this._cancelHoverOpen();
-                    return Clutter.EVENT_PROPAGATE;
-                });
+                    btn.connect('leave-event', () => {
+                        this._cancelHoverOpen();
+                        return Clutter.EVENT_PROPAGATE;
+                    });
+                }
                 // Pressing to grab the stack cancels the pending fan-open, so it
                 // can be dragged to reorder. (A lingering hover still opens it.)
                 btn.connect('button-press-event', () => {
@@ -2683,12 +2770,30 @@ export default class DockStacksExtension extends Extension {
         this._destroyGridWidgets();   // stop timers of widgets shown previously
         box.destroy_all_children();
         const q = (query || '').toLowerCase().trim();
+        const raw = (query || '').trim();
         const cat = this._appGridCategory || 'all';
+
+        // A pending file search from a previous keystroke is now stale.
+        if (this._fileSearchTimer) {
+            GLib.source_remove(this._fileSearchTimer);
+            this._fileSearchTimer = 0;
+        }
+        this._emptyLabel = null;
 
         // Favorites (no search) → the card dashboard; everything else → app grid.
         if (cat === 'favorites' && !q) {
             this._renderFavoritesDashboard(box);
             return;
+        }
+
+        // Calculator: if the query is a math expression, show the result on top.
+        let calcShown = false;
+        if (q) {
+            const res = evalMath(raw);
+            if (res !== null) {
+                box.add_child(this._makeCalcCard(raw, fmtMath(res)));
+                calcShown = true;
+            }
         }
 
         const apps = this._allApps.filter(a =>
@@ -2698,14 +2803,178 @@ export default class DockStacksExtension extends Extension {
             apps.reverse();
         this._appGridFiltered = apps;
 
-        if (apps.length === 0) {
-            box.add_child(new St.Label({
+        if (apps.length > 0) {
+            this._renderAppRows(box, apps, this._appGridColumns);
+        } else if (!calcShown) {
+            // Placeholder; removed later if a file search finds matches.
+            this._emptyLabel = new St.Label({
                 style_class: 'dock-appgrid-label',
-                text: _('Sin resultados'),
-            }));
-            return;
+                text: q ? _('Sin aplicaciones') : _('Sin resultados'),
+            });
+            box.add_child(this._emptyLabel);
         }
-        this._renderAppRows(box, apps, this._appGridColumns);
+
+        // File search (debounced) when actively searching.
+        if (q.length >= 2) {
+            this._fileSearchTimer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 250, () => {
+                this._fileSearchTimer = 0;
+                this._appendFileResults(q);
+                return GLib.SOURCE_REMOVE;
+            });
+        }
+    }
+
+    // Calculator result card shown at the top of the grid while searching.
+    _makeCalcCard(expr, result) {
+        const card = new St.Button({
+            style_class: 'dock-appgrid-calc', can_focus: true, x_expand: true,
+        });
+        const row = new St.BoxLayout({x_expand: true});
+        row.add_child(new St.Icon({
+            icon_name: 'accessories-calculator-symbolic', icon_size: 30,
+            style_class: 'dock-appgrid-calc-icon', y_align: Clutter.ActorAlign.CENTER,
+        }));
+        const txt = new St.BoxLayout({
+            orientation: Clutter.Orientation.VERTICAL,
+            x_expand: true, y_align: Clutter.ActorAlign.CENTER,
+        });
+        txt.add_child(new St.Label({style_class: 'dock-appgrid-calc-expr', text: `${expr} =`}));
+        txt.add_child(new St.Label({style_class: 'dock-appgrid-calc-res', text: result}));
+        row.add_child(txt);
+        const hint = new St.Label({
+            style_class: 'dock-appgrid-calc-hint', text: _('Clic para copiar'),
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        row.add_child(hint);
+        card.set_child(row);
+        card.connect('clicked', () => {
+            try {
+                St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, result);
+                hint.text = _('¡Copiado!');
+            } catch (_e) { /* ignore */ }
+        });
+        return card;
+    }
+
+    // Open a file/folder from a search result with the default handler.
+    _openFile(path) {
+        this._closeAppGrid();
+        try {
+            Gio.AppInfo.launch_default_for_uri(
+                Gio.File.new_for_path(path).get_uri(), null);
+        } catch (e) {
+            logError(e, 'Dock Stack: no se pudo abrir el archivo');
+        }
+    }
+
+    _makeFileCell(item) {
+        const cell = new St.Button({
+            style_class: 'dock-appgrid-cell', can_focus: true, track_hover: true,
+        });
+        attachHoverShake(cell);
+        const vb = new St.BoxLayout({
+            orientation: Clutter.Orientation.VERTICAL,
+            x_align: Clutter.ActorAlign.CENTER,
+        });
+        const gicon = item.gicon ?? new Gio.ThemedIcon({
+            name: item.isDir ? 'folder' : 'text-x-generic',
+        });
+        vb.add_child(new St.Icon({gicon, icon_size: 64}));
+        const lbl = new St.Label({style_class: 'dock-appgrid-label', text: item.name});
+        lbl.clutter_text.set_line_wrap(true);
+        lbl.clutter_text.set_ellipsize(3 /* END */);
+        vb.add_child(lbl);
+        cell.set_child(vb);
+        cell.connect('clicked', () => this._openFile(item.path));
+        return cell;
+    }
+
+    // Bounded recursive filename search over the user's common folders.
+    _searchFiles(q, limit = 18) {
+        const results = [];
+        const seen = new Set();
+        let dirBudget = 1200;
+        const UD = GLib.UserDirectory;
+        const roots = [];
+        const addRoot = (d) => {
+            if (d && GLib.file_test(d, GLib.FileTest.IS_DIR)) roots.push(d);
+        };
+        for (const k of ['DIRECTORY_DESKTOP', 'DIRECTORY_DOCUMENTS', 'DIRECTORY_DOWNLOAD',
+            'DIRECTORY_PICTURES', 'DIRECTORY_MUSIC', 'DIRECTORY_VIDEOS'])
+            addRoot(GLib.get_user_special_dir(UD[k]));
+        addRoot(GLib.get_home_dir());
+
+        const walk = (path, depth) => {
+            if (results.length >= limit || dirBudget <= 0 || depth > 3 || seen.has(path))
+                return;
+            seen.add(path);
+            dirBudget--;
+            let en;
+            try {
+                en = Gio.File.new_for_path(path).enumerate_children(
+                    'standard::name,standard::display-name,standard::icon,standard::type,standard::is-hidden',
+                    Gio.FileQueryInfoFlags.NONE, null);
+            } catch (_e) { return; }
+            let info;
+            const subdirs = [];
+            while ((info = en.next_file(null)) !== null) {
+                if (info.get_is_hidden())
+                    continue;
+                const name = info.get_display_name();
+                const isDir = info.get_file_type() === Gio.FileType.DIRECTORY;
+                if (name.toLowerCase().includes(q)) {
+                    results.push({
+                        name, gicon: info.get_icon(), isDir,
+                        path: path + '/' + info.get_name(),
+                    });
+                    if (results.length >= limit)
+                        break;
+                }
+                if (isDir)
+                    subdirs.push(info.get_name());
+            }
+            try { en.close(null); } catch (_e) { /* ok */ }
+            for (const d of subdirs) {
+                if (results.length >= limit || dirBudget <= 0)
+                    break;
+                walk(path + '/' + d, depth + 1);
+            }
+        };
+        for (const r of roots) {
+            if (results.length >= limit)
+                break;
+            walk(r, 0);
+        }
+        return results;
+    }
+
+    _appendFileResults(q) {
+        if (!this._appGridOverlay || !this._appGridBox)
+            return;
+        // Abort if the query changed since this search was scheduled.
+        if (!this._appGridSearch ||
+            this._appGridSearch.get_text().toLowerCase().trim() !== q)
+            return;
+        const files = this._searchFiles(q, 18);
+        if (files.length === 0)
+            return;
+        const box = this._appGridBox;
+        if (this._emptyLabel) {
+            try { this._emptyLabel.destroy(); } catch (_e) { /* ok */ }
+            this._emptyLabel = null;
+        }
+        box.add_child(new St.Label({
+            style_class: 'dock-appgrid-section', text: _('Archivos'),
+        }));
+        const cols = this._appGridColumns || 5;
+        let row = null;
+        files.forEach((f, i) => {
+            if (i % cols === 0) {
+                row = new St.BoxLayout({style_class: 'dock-appgrid-row'});
+                box.add_child(row);
+            }
+            row.add_child(this._makeFileCell(f));
+        });
     }
 
     _launchFirstApp() {
@@ -2787,6 +3056,10 @@ export default class DockStacksExtension extends Extension {
 
     _closeAppGrid(animate = false) {
         this._closeAppGridMenu();
+        if (this._fileSearchTimer) {
+            GLib.source_remove(this._fileSearchTimer);
+            this._fileSearchTimer = 0;
+        }
         const overlay = this._appGridOverlay;
         if (!overlay)
             return;
@@ -3105,10 +3378,40 @@ export default class DockStacksExtension extends Extension {
                 const info = f.query_info('standard::icon', Gio.FileQueryInfoFlags.NONE, null);
                 gicon = info.get_icon();
             } catch (_e) { /* fallback */ }
+        } else if (stack.type === 'workflow') {
+            gicon = new Gio.ThemedIcon({name: 'media-playback-start-symbolic'});
         } else {
             gicon = new Gio.ThemedIcon({name: 'view-grid-symbolic'});
         }
         return new St.Icon({gicon, icon_size: size});
+    }
+
+    // Workflow: launch all of its apps (and open any folders) at once.
+    _runWorkflow(stack) {
+        this._closeStack();
+        this._closeAppGrid();
+        if (Main.overview.visible)
+            Main.overview.hide();
+        const sys = APP_SYSTEM();
+        for (const id of (stack.apps || [])) {
+            const app = sys.lookup_app(id);
+            if (!app)
+                continue;
+            try {
+                if (app.can_open_new_window() && app.state === Shell.AppState.RUNNING)
+                    app.open_new_window(-1);
+                else
+                    app.activate();
+            } catch (_e) {
+                try { app.activate(); } catch (_e2) { /* ignore */ }
+            }
+        }
+        for (const path of (stack.folders || [])) {
+            try {
+                Gio.AppInfo.launch_default_for_uri(
+                    Gio.File.new_for_path(path).get_uri(), null);
+            } catch (_e) { /* ignore */ }
+        }
     }
 
     // ----------------------------------------------------------- stacks

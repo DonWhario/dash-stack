@@ -318,5 +318,16 @@
       <default>"auto"</default>
       <summary>Idioma de la extensión (auto sigue el sistema; si no está soportado, inglés)</summary>
     </key>
+
+    <key name="spaces" type="s">
+      <default>"[]"</default>
+      <summary>Espacios: perfiles de configuración guardados (JSON)</summary>
+      <description>Lista JSON de espacios. Cada espacio: {id,name,data:{clave:valorGVariant,…}} donde "data" es una instantánea de las claves de diseño/apariencia (stacks, widgets, dock-order, tamaño, posición, opacidad, isla, tema de la rejilla, etc.). Aplicar un espacio reescribe esas claves.</description>
+    </key>
+
+    <key name="active-space" type="s">
+      <default>""</default>
+      <summary>Id del espacio aplicado actualmente (vacío = ninguno)</summary>
+    </key>
   </schema>
 </schemalist>

@@ -45,6 +45,60 @@ function writeWidgets(settings, widgets) {
     settings.set_string('widgets', JSON.stringify(widgets));
 }
 
+// ---- Spaces (saved configuration profiles) ----
+
+// Keys captured in a Space snapshot: the layout + appearance of the dock, grid
+// and top bar. Excludes globals/secrets (language, sounds, API keys, DMC creds)
+// and the spaces keys themselves.
+const PROFILE_KEYS = [
+    'icon-size', 'position', 'autohide', 'intellihide', 'immersive-fullscreen',
+    'reserve-space', 'panel-island', 'panel-island-position',
+    'vivid-widgets', 'hover-shake', 'animated-icons', 'background-opacity',
+    'stack-columns', 'stack-max-items', 'stacks', 'widgets', 'dock-order',
+    'stack-style', 'stack-sort', 'stack-show-icon', 'stack-icon-position',
+    'show-apps-button', 'apps-button-icon', 'apps-button-position',
+    'fan-curve', 'fan-tilt', 'show-favorites', 'show-running',
+    'running-indicators', 'window-previews', 'custom-app-grid',
+    'appgrid-theme', 'appgrid-sort-desc', 'appgrid-genie', 'systray',
+];
+
+function readSpaces(settings) {
+    try {
+        const v = JSON.parse(settings.get_string('spaces'));
+        return Array.isArray(v) ? v : [];
+    } catch (_e) {
+        return [];
+    }
+}
+
+function writeSpaces(settings, spaces) {
+    settings.set_string('spaces', JSON.stringify(spaces));
+}
+
+// Snapshot the profile keys as a {key: GVariant-text} map (type-agnostic).
+function snapshotSettings(settings) {
+    const data = {};
+    for (const key of PROFILE_KEYS) {
+        try { data[key] = settings.get_value(key).print(true); } catch (_e) { /* skip */ }
+    }
+    return data;
+}
+
+// Write a snapshot back, parsing each value against the key's current type.
+function applySpaceData(settings, data) {
+    if (!data)
+        return;
+    for (const key of PROFILE_KEYS) {
+        if (!(key in data))
+            continue;
+        try {
+            const type = settings.get_value(key).get_type();
+            const v = GLib.Variant.parse(type, data[key], null, null);
+            settings.set_value(key, v);
+        } catch (_e) { /* skip malformed */ }
+    }
+}
+
 export default class DockStacksPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const settings = this.getSettings();
@@ -61,6 +115,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             this._buildGeneralPage(window, settings);
             this._buildStacksPage(window, settings);
             this._buildWidgetsPage(window, settings);
+            this._buildSpacesPage(window, settings);
             this._buildAboutPage(window);
         };
         build();
@@ -705,6 +760,145 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         sgroup.add(maxRow);
     }
 
+    // ------------------------------------------------------------- Spaces
+    _buildSpacesPage(window, settings) {
+        const page = new Adw.PreferencesPage({
+            title: _('Espacios'),
+            icon_name: 'emblem-documents-symbolic',
+        });
+        window.add(page);
+        if (this._prefPages) this._prefPages.push(page);
+        this._settings = settings;
+        this._window = window;
+
+        const intro = new Adw.PreferencesGroup({
+            title: _('Espacios (perfiles)'),
+            description: _('Guarda la configuración actual —stacks, widgets, disposición y apariencia— como un perfil, y cambia entre ellos cuando quieras. (No incluye idioma, sonidos ni claves.)'),
+        });
+        page.add(intro);
+
+        // Create a new space from the current configuration.
+        const newGroup = new Adw.PreferencesGroup({title: _('Nuevo espacio')});
+        page.add(newGroup);
+        const nameRow = new Adw.EntryRow({title: _('Nombre del espacio')});
+        const saveBtn = new Gtk.Button({
+            label: _('Guardar configuración actual'),
+            css_classes: ['suggested-action'],
+            valign: Gtk.Align.CENTER,
+        });
+        saveBtn.connect('clicked', () => {
+            const name = nameRow.get_text().trim();
+            if (!name)
+                return;
+            const spaces = readSpaces(settings);
+            spaces.push({id: uuidv4(), name, data: snapshotSettings(settings)});
+            writeSpaces(settings, spaces);
+            settings.set_string('active-space', spaces[spaces.length - 1].id);
+            nameRow.set_text('');
+            this._refreshSpaceList();
+        });
+        nameRow.add_suffix(saveBtn);
+        newGroup.add(nameRow);
+
+        const listGroup = new Adw.PreferencesGroup({title: _('Espacios guardados')});
+        page.add(listGroup);
+        this._spaceListGroup = listGroup;
+
+        this._refreshSpaceList();
+    }
+
+    _refreshSpaceList() {
+        if (!this._spaceListGroup)
+            return;
+        if (this._spaceRows) {
+            for (const r of this._spaceRows)
+                this._spaceListGroup.remove(r);
+        }
+        this._spaceRows = [];
+        const settings = this._settings;
+        const spaces = readSpaces(settings);
+        const active = settings.get_string('active-space');
+
+        if (spaces.length === 0) {
+            const empty = new Adw.ActionRow({
+                title: _('Aún no hay espacios'),
+                subtitle: _('Escribe un nombre arriba y guarda la configuración actual'),
+            });
+            this._spaceListGroup.add(empty);
+            this._spaceRows.push(empty);
+            return;
+        }
+
+        spaces.forEach((sp, index) => {
+            const exp = new Adw.ExpanderRow({
+                title: sp.name || _('Espacio'),
+                subtitle: sp.id === active ? _('✓ Activo') : '',
+            });
+
+            const nameRow = new Adw.EntryRow({title: _('Nombre')});
+            nameRow.set_text(sp.name || '');
+            nameRow.connect('changed', () => {
+                const all = readSpaces(settings);
+                if (!all[index])
+                    return;
+                all[index].name = nameRow.get_text();
+                writeSpaces(settings, all);
+                exp.set_title(all[index].name || _('Espacio'));
+            });
+            exp.add_row(nameRow);
+
+            const act = new Adw.ActionRow({
+                title: _('Aplicar, actualizar o eliminar'),
+            });
+            const applyBtn = new Gtk.Button({
+                label: _('Aplicar'),
+                css_classes: ['suggested-action'],
+                valign: Gtk.Align.CENTER,
+            });
+            applyBtn.connect('clicked', () => {
+                applySpaceData(settings, sp.data);
+                settings.set_string('active-space', sp.id);
+                this._refreshSpaceList();
+                // The Stacks/Widgets lists read the settings we just rewrote.
+                if (this._listGroup) this._refreshStackList();
+                if (this._widgetListGroup) this._refreshWidgetList();
+            });
+            const updateBtn = new Gtk.Button({
+                label: _('Actualizar'),
+                valign: Gtk.Align.CENTER,
+            });
+            updateBtn.set_tooltip_text(_('Sobrescribir este espacio con la configuración actual'));
+            updateBtn.connect('clicked', () => {
+                const all = readSpaces(settings);
+                if (!all[index])
+                    return;
+                all[index].data = snapshotSettings(settings);
+                writeSpaces(settings, all);
+            });
+            const delBtn = new Gtk.Button({
+                icon_name: 'user-trash-symbolic',
+                valign: Gtk.Align.CENTER,
+                css_classes: ['flat', 'error'],
+            });
+            delBtn.set_tooltip_text(_('Eliminar espacio'));
+            delBtn.connect('clicked', () => {
+                const all = readSpaces(settings);
+                all.splice(index, 1);
+                writeSpaces(settings, all);
+                if (active === sp.id)
+                    settings.set_string('active-space', '');
+                this._refreshSpaceList();
+            });
+            act.add_suffix(applyBtn);
+            act.add_suffix(updateBtn);
+            act.add_suffix(delBtn);
+            exp.add_row(act);
+
+            this._spaceListGroup.add(exp);
+            this._spaceRows.push(exp);
+        });
+    }
+
     // ------------------------------------------------------------- Stacks
     _buildStacksPage(window, settings) {
         const page = new Adw.PreferencesPage({
@@ -744,6 +938,15 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         addAppsRow.add_suffix(new Gtk.Image({icon_name: 'list-add-symbolic'}));
         addAppsRow.connect('activated', () => this._addAppGroup());
         actionGroup.add(addAppsRow);
+
+        const addWorkflowRow = new Adw.ActionRow({
+            title: _('Añadir workflow'),
+            subtitle: _('Un botón que abre varias apps a la vez (al pulsarlo)'),
+            activatable: true,
+        });
+        addWorkflowRow.add_suffix(new Gtk.Image({icon_name: 'media-playback-start-symbolic'}));
+        addWorkflowRow.connect('activated', () => this._addWorkflow());
+        actionGroup.add(addWorkflowRow);
 
         this._refreshStackList();
     }
@@ -797,6 +1000,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             ['weather', _('Añadir: Clima'), _('Temperatura y condición (automático)'), 'weather-clear-symbolic'],
             ['system', _('Añadir: Sistema'), _('CPU, RAM, disco, red y temperatura (solo grilla)'), 'utilities-system-monitor-symbolic'],
             ['clock', _('Añadir: Reloj'), _('Hora y fecha'), 'preferences-system-time-symbolic'],
+            ['text', _('Añadir: Texto/Nota'), _('Una nota de texto tuya (título + contenido)'), 'text-editor-symbolic'],
             ['news', _('Añadir: Noticias'), _('Titulares por país (Google News)'), 'application-rss+xml-symbolic'],
             ['photos', _('Añadir: Fotos'), _('Pase de fotos del sistema en formato Polaroid'), 'image-x-generic-symbolic'],
             ['chat', _('Añadir: Chat IA'), _('Conversar con Gemini, ChatGPT o Claude (requiere clave API)'), 'user-available-symbolic'],
@@ -826,6 +1030,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         case 'weather': return _('Clima');
         case 'system': return _('Sistema');
         case 'clock': return _('Reloj');
+        case 'text': return _('Texto');
         case 'news': return _('Noticias');
         case 'photos': return _('Fotos');
         case 'chat': return _('Chat IA');
@@ -957,6 +1162,27 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             });
             swDock.connect('notify::active', () => this._updateWidget(w.id, {dockStyle: swDock.get_active()}));
             exp.add_row(swDock);
+        } else if (w.type === 'text') {
+            const titleRow = new Adw.EntryRow({title: _('Título (opcional)')});
+            titleRow.set_text(w.title || '');
+            titleRow.connect('changed', () => this._updateWidget(w.id, {title: titleRow.get_text()}));
+            exp.add_row(titleRow);
+
+            const tv = new Gtk.TextView({
+                wrap_mode: Gtk.WrapMode.WORD_CHAR,
+                top_margin: 6, bottom_margin: 6, left_margin: 8, right_margin: 8,
+            });
+            tv.get_buffer().set_text(w.text || '', -1);
+            tv.get_buffer().connect('changed', (buf) => {
+                const text = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), false);
+                this._updateWidget(w.id, {text});
+            });
+            const sw = new Gtk.ScrolledWindow({
+                min_content_height: 110, child: tv,
+                margin_top: 6, margin_bottom: 6, margin_start: 6, margin_end: 6,
+                css_classes: ['card'],
+            });
+            exp.add_row(sw);
         } else if (w.type === 'news') {
             const codes = ['CL', 'AR', 'MX', 'PE', 'CO', 'ES', 'US', 'GB', 'BR', 'FR', 'DE', 'IT'];
             const labels = ['Chile', 'Argentina', 'México', 'Perú', 'Colombia', 'España',
@@ -1082,6 +1308,8 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             Object.assign(w, {command: '', label: '', interval: 10, width: 180});
         else if (type === 'clock')
             Object.assign(w, {format24: true, showDate: true});
+        else if (type === 'text')
+            Object.assign(w, {title: _('Nota'), text: '', place: 'grid'});
         else if (type === 'news')
             w.country = 'CL';
         else if (type === 'photos')
@@ -1124,10 +1352,14 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             return;
         }
 
+        const defIcon = (t) => t === 'folder' ? 'folder-symbolic'
+            : t === 'workflow' ? 'media-playback-start-symbolic' : 'view-grid-symbolic';
         stacks.forEach((stack, index) => {
             const subtitle = stack.type === 'folder'
                 ? `Carpeta · ${stack.path || ''}`
-                : `Grupo de apps · ${(stack.apps || []).length} app(s)`;
+                : stack.type === 'workflow'
+                    ? `Workflow · ${(stack.apps || []).length} app(s)`
+                    : `Grupo de apps · ${(stack.apps || []).length} app(s)`;
             const row = new Adw.ActionRow({title: stack.name, subtitle});
 
             // Preview of the stack icon
@@ -1136,7 +1368,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
                 if (stack.icon)
                     prev.set_from_gicon(Gio.icon_new_for_string(stack.icon));
                 else
-                    prev.set_from_icon_name(stack.type === 'folder' ? 'folder-symbolic' : 'view-grid-symbolic');
+                    prev.set_from_icon_name(defIcon(stack.type));
             } catch (_e) {
                 prev.set_from_icon_name('image-missing-symbolic');
             }
@@ -1218,6 +1450,19 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         });
     }
 
+    _addWorkflow() {
+        this._promptText(_('Nombre del workflow'), _('Mi workflow'), (name) => {
+            if (!name)
+                return;
+            this._pickApps([], (apps) => {
+                const stacks = readStacks(this._settings);
+                stacks.push({id: uuidv4(), name, type: 'workflow', apps});
+                writeStacks(this._settings, stacks);
+                this._refreshStackList();
+            });
+        });
+    }
+
     _openStackEditor(index) {
         const stacks = readStacks(this._settings);
         const stack = stacks[index];
@@ -1256,7 +1501,8 @@ export default class DockStacksPreferences extends ExtensionPreferences {
                 if (spec)
                     preview.set_from_gicon(Gio.icon_new_for_string(spec));
                 else
-                    preview.set_from_icon_name(stack.type === 'folder' ? 'folder-symbolic' : 'view-grid-symbolic');
+                    preview.set_from_icon_name(stack.type === 'folder' ? 'folder-symbolic'
+                        : stack.type === 'workflow' ? 'media-playback-start-symbolic' : 'view-grid-symbolic');
             } catch (_e) {
                 preview.set_from_icon_name('image-missing-symbolic');
             }
@@ -1288,7 +1534,7 @@ export default class DockStacksPreferences extends ExtensionPreferences {
         iconRow.add_suffix(clearBtn);
         group.add(iconRow);
 
-        // Per-stack deployment style
+        // Per-stack deployment style (not for workflows: they just launch).
         const styleModel = new Gtk.StringList();
         [_('Predeterminado'), _('Grilla'), _('Abanico')].forEach(s => styleModel.append(s));
         const styleKeys = ['', 'grid', 'fan'];
@@ -1297,11 +1543,13 @@ export default class DockStacksPreferences extends ExtensionPreferences {
             model: styleModel,
             selected: Math.max(0, styleKeys.indexOf(stack.style || '')),
         });
-        group.add(styleRow);
+        if (stack.type !== 'workflow')
+            group.add(styleRow);
 
         // Content by type
         const contentGroup = new Adw.PreferencesGroup({
-            title: stack.type === 'folder' ? _('Carpeta') : _('Aplicaciones'),
+            title: stack.type === 'folder' ? _('Carpeta')
+                : stack.type === 'workflow' ? _('Apps que se abrirán') : _('Aplicaciones'),
         });
         page.add(contentGroup);
 

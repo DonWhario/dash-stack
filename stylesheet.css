@@ -520,6 +520,29 @@
     padding-top: 6px;
 }
 
+/* Section header between results (e.g. "Archivos"). */
+.dock-appgrid-section {
+    color: #b8b8b8;
+    font-size: 10pt;
+    font-weight: bold;
+    padding: 12px 2px 6px 2px;
+}
+
+/* Calculator result card at the top of the search results. */
+.dock-appgrid-calc {
+    border-radius: 14px;
+    padding: 10px 14px;
+    margin-bottom: 8px;
+    background-color: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    transition-duration: 120ms;
+}
+.dock-appgrid-calc:hover { background-color: rgba(255, 255, 255, 0.12); }
+.dock-appgrid-calc-icon { color: #ffce00; }
+.dock-appgrid-calc-expr { color: #9aa0aa; font-size: 10pt; padding-left: 12px; }
+.dock-appgrid-calc-res { color: #ffffff; font-size: 18pt; font-weight: bold; padding-left: 12px; }
+.dock-appgrid-calc-hint { color: #8a8a8a; font-size: 8.5pt; }
+
 /* ---- LIGHT theme: white frames → dark text and legible borders ---- */
 .dock-appgrid-container.light .dock-appgrid-inner {
     border-color: rgba(0, 0, 0, 0.20);
@@ -542,6 +565,16 @@
 .dock-appgrid-container.light .dock-appgrid-label {
     color: #1a1a1a;
 }
+
+.dock-appgrid-container.light .dock-appgrid-section { color: #555555; }
+.dock-appgrid-container.light .dock-appgrid-calc {
+    background-color: rgba(0, 0, 0, 0.04);
+    border-color: rgba(0, 0, 0, 0.12);
+}
+.dock-appgrid-container.light .dock-appgrid-calc:hover { background-color: rgba(0, 0, 0, 0.08); }
+.dock-appgrid-container.light .dock-appgrid-calc-expr { color: #6b7280; }
+.dock-appgrid-container.light .dock-appgrid-calc-res { color: #111111; }
+.dock-appgrid-container.light .dock-appgrid-calc-hint { color: #999999; }
 
 .dock-appgrid-container.light .dock-appgrid-cell:hover {
     background-color: rgba(0, 0, 0, 0.08);
@@ -1371,6 +1404,26 @@
 .dock-appgrid-container.light .dock-sys-stat {
     background-color: rgba(0, 0, 0, 0.03); border-color: rgba(0, 0, 0, 0.08);
 }
+
+/* ============ Text / note widget ============ */
+.dock-text-card {
+    spacing: 6px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 16px;
+    padding: 14px;
+}
+.dock-text-head { spacing: 8px; padding-bottom: 4px; }
+.dock-text-head-icon { color: #ffffff; }
+.dock-text-title { color: #ffffff; font-weight: bold; font-size: 12pt; }
+.dock-text-body { color: #dcdcdc; font-size: 10.5pt; }
+.dock-appgrid-container.light .dock-text-card {
+    background-color: rgba(0, 0, 0, 0.04); border-color: rgba(0, 0, 0, 0.12);
+}
+.dock-appgrid-container.light .dock-text-head-icon,
+.dock-appgrid-container.light .dock-text-title { color: #111827; }
+.dock-appgrid-container.light .dock-text-body { color: #374151; }
+.dock-widget-note-icon { color: #ffffff; }
 
 /* ---- Bigger Polaroid caption in the grid ---- */
 .dock-widget-photos-big .dock-photo-cap {

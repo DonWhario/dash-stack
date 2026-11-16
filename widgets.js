@@ -90,6 +90,7 @@ export function makeWidget(spec, iconSize, _, lang, hooks, mode) {
     case 'weather': return makeWeather(spec, iconSize, _, lang, hooks);
     case 'system': return makeSystem(spec, iconSize, _);
     case 'clock': return makeClock(spec, iconSize, _);
+    case 'text': return makeText(spec, iconSize, _);
     case 'script': return makeScript(spec, iconSize, _);
     case 'news': return makeNews(spec, iconSize, _, lang, hooks);
     case 'photos': return makePhotos(spec, iconSize, _);
@@ -108,6 +109,7 @@ function makeWidgetGrid(spec, iconSize, _, lang, hooks) {
     case 'photos': return makePhotos(spec, iconSize, _, true);
     case 'chat': return makeChatGrid(spec, _, hooks);
     case 'system': return makeSystemGrid(spec, _);
+    case 'text': return makeTextGrid(spec, _);
     case 'script': return makeScript(spec, iconSize, _);
     default: return makePlaceholder(_);
     }
@@ -1726,6 +1728,47 @@ function makeSystemGrid(spec, _) {
     container.connect('destroy', stop);
 
     return {actor: container, destroy: stop};
+}
+
+// Text / note widget: a user-written title + body. Dock = compact; grid = card.
+function makeText(spec, iconSize, _) {
+    const box = card('dock-widget-note');
+    if (vividWidgets) {
+        box.add_style_class_name('vivid');
+        box.set_style(vividGradient('clock'));
+    }
+    box.add_child(new St.Icon({
+        icon_name: 'text-x-generic-symbolic', icon_size: iconSize,
+        style_class: 'dock-widget-note-icon',
+    }));
+    const {col} = textColumn(spec.title || _('Nota'), spec.text || '');
+    box.add_child(col);
+    return {actor: box, destroy() { /* static */ }};
+}
+
+function makeTextGrid(spec, _) {
+    const container = new St.BoxLayout({
+        style_class: 'dock-text-card', orientation: Clutter.Orientation.VERTICAL,
+    });
+    container.set_width(300);
+    const title = (spec.title || '').trim();
+    if (title) {
+        const head = new St.BoxLayout({style_class: 'dock-text-head'});
+        head.add_child(new St.Icon({
+            icon_name: 'text-x-generic-symbolic', icon_size: 18,
+            style_class: 'dock-text-head-icon', y_align: CENTER,
+        }));
+        head.add_child(new St.Label({
+            style_class: 'dock-text-title', text: title,
+            x_expand: true, y_align: CENTER,
+        }));
+        container.add_child(head);
+    }
+    const body = new St.Label({style_class: 'dock-text-body', text: spec.text || ''});
+    body.clutter_text.set_line_wrap(true);
+    body.clutter_text.set_selectable(true);
+    container.add_child(body);
+    return {actor: container, destroy() { /* static */ }};
 }
 
 function makeClock(spec, iconSize, _) {
